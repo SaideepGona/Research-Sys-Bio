@@ -1,35 +1,38 @@
+from __future__ import with_statement
+from __future__ import absolute_import
 import wget
 import os
 import pandas as pd
 import numpy as np
 import subprocess
+from io import open
 
 # Start with files.txt file
 
 def DownloadLink(url):
 
     currentFile = wget.download(url)
-    print(currentFile, "downloaded")
+    print currentFile, u"downloaded"
     return currentFile
 
 def DeleteFile(filename):
 
     os.remove(filename)
-    print(filename, "deleted")
+    print filename, u"deleted"
 
 def AccesionToURL(accession):
 
-    URL = 'https://www.encodeproject.org/files/' + accession + '/@@download/' + accession + '.fastq.gz'
+    URL = u'https://www.encodeproject.org/files/' + accession + u'/@@download/' + accession + u'.fastq.gz'
     return URL
 
 def DownloadToBam(accession):
 
     downloadFile = DownloadLink(AccesionToURL(accession))
-    subprocess.call(["gunzip", downloadFile])
-    samOut = accession + ".sam"
-    subprocess.call(["bowtie2", "-x", referenceGenome, "-U", downloadFile[0:-3], "-S", samOut])
-    bamOut = accession + ".bam"
-    subprocess.call(["samtools", "view" , "-S", "-b", samOut, ">", bamOut])
+    subprocess.call([u"gunzip", downloadFile])
+    samOut = accession + u".sam"
+    subprocess.call([u"bowtie2", u"-x", referenceGenome, u"-U", downloadFile[0:-3], u"-S", samOut])
+    bamOut = accession + u".bam"
+    subprocess.call([u"samtools", u"view" , u"-S", u"-b", samOut, u">", bamOut])
 
     return bamOut
 
@@ -40,35 +43,35 @@ def DownloadToBam(accession):
 # DOWNLOAD METADATA AND READ IN AS A DATAFRAME **********************************************************************
 
 filesTxt = []
-with open("files.txt") as f:                                # Open files.txt and pull out link to metadata.
+with open(u"files.txt") as f:                                # Open files.txt and pull out link to metadata.
     for line in f:
         filesTxt.append(line.strip())
 metadata = filesTxt[0]
 
-if os.path.isfile('metadata.tsv') == False:                 # If metadata.tsv does not exist download it and read it as a dataframe
+if os.path.isfile(u'metadata.tsv') == False:                 # If metadata.tsv does not exist download it and read it as a dataframe
     metaFile = DownloadLink(metadata)
     metaTable = pd.read_table(metaFile)
 else:
-    metaTable = pd.read_table('metadata.tsv')               # If metadata.tsv exists, read as dataframe
-print(metaTable)
+    metaTable = pd.read_table(u'metadata.tsv')               # If metadata.tsv exists, read as dataframe
+print metaTable
 
 # ******************************************************************************************************************
 # DOWNLOAD HG19 REFERENCE GENOME ***********************************************************************************
 
 global referenceGenome
-referenceGenome = "hg19ind"
-refDownloadFileName = "chromFa.tar.gz"
+referenceGenome = u"hg19ind"
+refDownloadFileName = u"chromFa.tar.gz"
 if os.path.isfile(refDownloadFileName) == False:
-    refURL = "http://hgdownload.cse.ucsc.edu/goldenPath/hg19/bigZips/" + refDownloadFileName
+    refURL = u"http://hgdownload.cse.ucsc.edu/goldenPath/hg19/bigZips/" + refDownloadFileName
     refDown = wget(refURL)
-    subprocess.call(["tar", "xkf"].append(refDown[0:-3]))
-    subprocess.call(["cat", "*.fa", ">>", "reference.fa"])
-    subprocess.call(["bowtie2-build", "reference.fa", referenceGenome])
+    subprocess.call([u"tar", u"xkf"].append(refDown[0:-3]))
+    subprocess.call([u"cat", u"*.fa", u">>", u"reference.fa"])
+    subprocess.call([u"bowtie2-build", u"reference.fa", referenceGenome])
 
 # *****************************************************************************************************************
-# GENERATE EXPERIMENT TO TRIAL  MATCHING **************************************************************************
+# GENERATE EXPERIMENT TO TRIAL MATCHING **************************************************************************
 
-valueCounts = metaTable['Experiment accession'].value_counts() # Finds all unique experiments and number of associated files for each
+valueCounts = metaTable[u'Experiment accession'].value_counts() # Finds all unique experiments and number of associated files for each
 #print(type(valueCounts), len(valueCounts), "Experiments Conducted")
 
 # Generate mapping of all accession IDs per experiment to each transcription factor
@@ -76,21 +79,21 @@ global accessionLength
 accessionLength = 11            # Length of file accession IDs (can change over time?)
 
 expToAccession = {}             # For each key(Experiment Accession), there is a list with a sublist(replicates) and another sublist(controls)
-
+print "here"
 for exp, val in valueCounts.iteritems():
 
     expToAccession[exp] = [[],[]]                                   # Each experiment has replicates and controls
     
-    for key, val in metaTable.loc[metaTable['Experiment accession']== exp, 'File accession'].iteritems():
+    for key, val in metaTable.loc[metaTable[u'Experiment accession']== exp, u'File accession'].iteritems():
         expToAccession[exp][0].append(val)
 
-    for key, val in metaTable.loc[metaTable['Experiment accession']== exp, 'Controlled by'].iteritems():
+    for key, val in metaTable.loc[metaTable[u'Experiment accession']== exp, u'Controlled by'].iteritems():
 
-        if type(val) is not str:
+        if not isinstance(val, basestring):
             continue
 
         if len(val) > 2*accessionLength:
-            allControls = val.split(',')
+            allControls = val.split(u',')
             for control in allControls:
                 accessionOnly = control[-(accessionLength+1):-1]
                 expToAccession[exp][1].append(accessionOnly)
@@ -99,13 +102,18 @@ for exp, val in valueCounts.iteritems():
             controlDownload = AccesionToURL(accessionOnly)
             expToAccession[exp][1].append(accessionOnly)
 
-print(expToAccession)
-print("number of studies", len(expToAccession))
+print expToAccession
+print u"number of studies", len(expToAccession)
 
 # *****************************************************************************************************************
 # CREATE MACS PEAK FOR EACH EXPERIMENT ****************************************************************************
 
+expToAccession = {}
+expToAccession['ENCSR000DKX'] = [['ENCFF000RPR', 'ENCFF000RPS'], []]
+expToAccession['ENCSR000DNV'] = [['ENCFF000XBD', 'ENCFF000XBE'], ['ENCFF000XGP', 'ENCFF000XGP']]
+print expToAccession
 badExperiments = []
+
 for exp, trials in expToAccession.items():
     trials[1] = list(set(trials[1]))
     if len(trials[0]) == 0 or len(trials[1]) == 0:                                     # Check if replicates or controls are empty
@@ -116,33 +124,34 @@ for exp, trials in expToAccession.items():
     for replicateAcc in trials[0]:                                                     # converts them to BAM files, and merges them into
         bamFile = DownloadToBam(replicateAcc)                                          # a single mergedRepFile
         replicateBamFiles.append(bamFile)
-    mergedRepFile = "mergedReplicates.bam"
+    mergedRepFile = u"mergedReplicates.bam"
     if len(replicateBamFiles) == 1:
         mergedRepFile = replicateBamFiles[0]
     elif len(replicateBamFiles) > 1: 
-        subprocess.call(["samtools", "merge", mergedRepFile]+replicateBamFiles)
+        subprocess.call([u"samtools", u"merge", mergedRepFile]+replicateBamFiles)
     for rBF in replicateBamFiles:
         DeleteFile(rBF)
-        DeleteFile(rBF[:-4]+".sam")
+        DeleteFile(rBF[:-4]+u".sam")
 
     controlBamFiles = []                                                            # Does the same as replicates but for controls
     for controlAcc in trials[1]:
         bamFile = DownloadToBam(controlAcc)
         controlBamFiles.append(bamFile)
-    mergedControlFile = "mergedControls.bam"
+    mergedControlFile = u"mergedControls.bam"
     if len(controlBamFiles) == 1:
         mergedControlFile = controlBamFiles[0]
     elif len(controlBamFiles) > 1: 
-        subprocess.call(["samtools", "merge", mergedControlFile]+controlBamFiles)
+        subprocess.call([u"samtools", u"merge", mergedControlFile]+controlBamFiles)
     for cBF in controlBamFiles:
         DeleteFile(cBF)
-        DeleteFile(cBF[:-4]+".sam")
+        DeleteFile(cBF[:-4]+u".sam")
 
-    subprocess.call(["macs2", "callpeak", "-t", mergedRepFile, "-c", mergedControlFile, "-n", exp]) # Call Macs Peak of the merged files
+    subprocess.call([u"macs2", u"callpeak", u"-t", mergedRepFile, u"-c", mergedControlFile, u"-n", exp]) # Call Macs Peak of the merged files
 
 
-# NEED TO CONVERT TO PYTHON 2.7 ********************************************************
 # BEST WAY TO FULLY DELETE FILES *******************************************************
+# HANDLING ERRORS **********************************************************************
+# BETTER METHOD TO DOWNLOAD THAN WGET **************************************************
 
 
 

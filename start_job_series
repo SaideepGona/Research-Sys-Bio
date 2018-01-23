@@ -1,0 +1,8 @@
+#!/bin/bash
+
+for job in {1..30}
+do
+sbatch batch_submit_scraper
+sleep 1s
+done
+sbatch batch_submit_err

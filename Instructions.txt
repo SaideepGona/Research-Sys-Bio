@@ -1,0 +1,29 @@
+Description of scripts included in this directory:
+
+PYTHON SCRIPTS
+
+****encode_scraper3.py****
+Workhorse script. Collects and process relevant input data from the encode database. Each job will run one instance
+of this. It runs in parallel with other instances of itself, and is not limited in number of instances that can be
+run.
+
+****error_check.py****
+Checks .err and .out files in current directory for unusual file sizes. Halts all jobs if strange behavior instance
+detected. Run one instance alongside any number of encode scraper instances.
+
+SHELL SCRIPTS
+
+****batch_submit_scraper****
+Starts a job instance of encode_scraper with modifiable cluster parameters
+
+****batch_submit_err****
+Starts a job instance of error_check.py with modifiable cluster parameters
+
+****reset_all****
+Cancels all jobs and clears miscellaneous files from directory. Prepares for running a new set of jobs
+
+****start_job_series****
+Takes as input a number of scraper instances to initiate, and runs them along with an error checker
+
+
+

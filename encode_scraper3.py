@@ -5,6 +5,7 @@ import numpy as np
 import subprocess
 import urllib
 import sys
+import requests, json
 
 # Dependencies:
 # python libraries above
@@ -16,19 +17,59 @@ import sys
 # Start with files.txt file
 
 # TO-DO
-# DONE: Use samtools quickcheck option to check the file format and headers are correct first
-# TODO User subprocess to get the exit status of the commands being run to see if they finished without errors.
-# TODO Pipe bowtie alignment output directly to samtools view to avoid .sam file intermediary
-# TODO Refactor code!
+# TODO Detect whether given experiment already has .bam or peaks
+# TODO Create alternative pipelines as needed
+
+class Pipeline:
+
+
 
 class Experiment:
 
-    def __init__(self, accession_id, transcription_factor, noncontrol_IDs, control_IDs):
+    def __init__(self, accession_id, transcription_factor, noncontrols, controls):
 
         self.accession_id = accession_id
         self.transcription_factor = transcription_factor
-        self.noncontrol_IDs = noncontrol_IDs
-        self.control_IDs = control_IDs
+        self.noncontrols = noncontrols
+        self.controls = controls
+
+    def assess_experiment(self):
+        #Checks if .bam/peaks are present and stores this as a property
+        exp_json = get_request(self.accession_id)
+        files = exp_json['files']
+        files_acc = [(file_string[7:])[:-1] for file_string in files]
+        file_types = [find_file_type(file_acc) for file_acc in files]
+
+        files = determine_file_state(file_types)
+
+
+    def determine_file_state(self, files, file_types):
+        """
+        Determines the current level of processing for the experiment(fastq,bam,peak)
+        Also returns a list of accessions for all files of the most-processed file type
+        """
+
+        fastq_files = []
+        bam_files = []
+        peak_files = []
+
+        for x in range(len(file_types)):
+            if file_types[x] == "fastq":
+                fastq_files.append(files[x])
+            elif file_types[x] == "bam":
+                fastq_files.append(files[x])
+            elif file_types[x] == "bed":
+                peak_files.append(files[x])
+
+        if len(peak_files) > 0:
+            self.file_state = "peaks"
+            return peak_files
+        elif len(bam_files) > 0:
+            self.file_state = "bams"
+            return bam_files
+        elif len(fastq_files) > 0:
+            self.file_state = "fastqs"
+            return fastq_files
 
     def process_experiment(self):
 
@@ -39,10 +80,10 @@ class Experiment:
     def create_merged_bam(self, experiment_ID, is_control):
 
         if is_control:
-            current_reps = self.control_IDs
+            current_reps = self.controls
             merged_filename = "_merged_controls.bam"
         else:
-            current_reps = self.noncontrol_IDs
+            current_reps = self.noncontrols
             merged_filename = "_merged_noncontrols.bam"
 
         rep_bam_files = []
@@ -51,17 +92,17 @@ class Experiment:
             rep_bam_files.append(bam_file)
 
         merged_file = experiment_ID + merged_filename
-        
+
         if len(rep_bam_files) == 1:
             merged_file = rep_bam_files[0]
         elif len(rep_bam_files) > 1:
             subprocess.run(["samtools", "merge", merged_file]+rep_bam_files)
 
         for rep_file in rep_bam_files:
-            delete_file(rep_file)                                     
-            delete_file(rep_file[:-4]+".sam")                         
-            delete_file(rep_file[:-4]+".fastq")                       
-            delete_file(rep_file[:-4]+".place")                       
+            delete_file(rep_file)
+            delete_file(rep_file[:-4]+".sam")
+            delete_file(rep_file[:-4]+".fastq")
+            delete_file(rep_file[:-4]+".place")
 
         return merged_file
 
@@ -73,8 +114,8 @@ class Experiment:
             sys.stdout.write("Problem running MACS2")
             sys.exit()
 
-        delete_file(mergedRepFile)                              
-        delete_file(mergedControlFile)                           
+        delete_file(merged_noncontrols)
+        delete_file(merged_controls)
 
 
 class Replicate:
@@ -95,29 +136,43 @@ class Replicate:
         print("downloaded file")
         subprocess.run(["gunzip", download_file])                       # Unzip the .fastq.gz to a fastq
         print("unzipped")
+        delete_file(download_file)
         # Align .fastq and output .sam; .sam is piped into samtools view to output .bam
 
         bam_out = self.accession_id + ".bam"
         bam_file = open(bam_out, 'w')
         alignment_process = subprocess.Popen(["bowtie2", "-x ", reference_genome, "-U", download_file[0:-3]], bufsize = 500*10**6, stderr=None, stdout=subprocess.PIPE)
-        sam_to_bam_process = subprocess.Popen(["samtools", "view", "-bSu", "-"], stderr=None, stdin=bowT.stdout, stdout=bamFile)
+        sam_to_bam_process = subprocess.Popen(["samtools", "view", "-bSu", "-"], stderr=None, stdin=alignment_process.stdout, stdout=bam_file)
         alignment_process.stdout.close()
         output = sam_to_bam_process.communicate()
         alignment_process.wait()
 
-        delete_file(download_file)                                          # Convert .sam to .bam
-        
+        delete_file(download_file[0:-3])                                          # Convert .sam to .bam
+
         quick_check(bam_out)
 
-        delete_file(sam_out)
+        return bam_out
 
-        return bam_out 
+def get_request(accession):
 
+    headers = {'accept': 'application/json'}
+    url = "http://www.encodeproject.org/biosample/" + accession + "/?frame=object"
+    response = requests.get(url, headers = headers)
+    response_dict = response.json()
+
+    return response_dict
+
+def find_file_type(accession):
+
+    response = get_request(accession)
+    file_type = response["file_format"]
+
+    return file_type
 
 def quick_check(file):
     """
     Runs the samtools quickckeck command on a given input file to check for truncation. If there is a problem,
-    will cancel the job and write the filename to stdout 
+    will cancel the job and write the filename to stdout
     """
     check_out = subprocess.run(["samtools", "quickcheck", "-v", file])
     print(check_out)
@@ -145,7 +200,7 @@ def delete_file(filename):
 
     if os.path.isfile(filename) == True:
         os.remove(filename)
-        sys.stdout.write(filename, "deleted")
+        sys.stdout.write(filename + "deleted")
     else:
         return
 
@@ -163,22 +218,24 @@ def experiment_exists(experiment_ID, experiment):
     Checks if an experiment has already been processed or is being processed
     """
     def extension_exists(root):
-        rep_bool = (os.path.isfile(experiment_ID + ".fastq.gz")
-            or os.path.isfile(experiment_ID + ".fastq")
-            or os.path.isfile(experiment_ID + ".sam")
-            or os.path.isfile(experiment_ID + ".bam")
-            or os.path.isfile(experiment_ID + ".place")
+        rep_bool = (os.path.isfile(root + ".fastq.gz")
+            or os.path.isfile(root + ".fastq")
+            or os.path.isfile(root + ".sam")
+            or os.path.isfile(root + ".bam")
+            or os.path.isfile(root + ".place")
         )
         if rep_bool:
+            print("exists")
             return True
+        print(rep_bool)
         return False
 
 
-    for replicate in experiment.noncontrol_IDs:
-        if extension_exists(replicate):
+    for noncontrol in experiment.noncontrols:
+        if extension_exists(noncontrol.accession_id):
             return True
-    for control in experiment.control_IDs:
-        if extension_exists(control):
+    for control in experiment.controls:
+        if extension_exists(control.accession_id):
             return True
 
     exp_bool = (os.path.isfile(experiment_ID + "-peaks.tsv")
@@ -186,8 +243,14 @@ def experiment_exists(experiment_ID, experiment):
         or os.path.isfile(experiment_ID + "-summits.bed")
         or os.path.isfile(experiment_ID + "-log.txt")
         or os.path.isfile(experiment_ID + "-model.pdf")
+        or os.path.isfile(experiment_ID + "_peaks.narrowpeak")
+        or os.path.isfile(experiment_ID + "_peaks.xls")
+        or os.path.isfile(experiment_ID + "_summits.bed")
+        or os.path.isfile(experiment_ID + "_model.r")
     )
-    if exp_bool:    
+    if exp_bool:
+        print(experiment_ID, "exists")
+        sys.stdout.flush()
         return True
     return False
 
@@ -249,9 +312,9 @@ experiments_dict = {}             # For each key(Experiment Accession ID), there
 for exp, val in value_counts.iteritems():
 
     experiments_dict[exp] = Experiment(exp, None, [], [])                                  # Add experiment object
-    
+
     for key, replicate in meta_table.loc[meta_table['Experiment accession'] == exp, 'File accession'].iteritems():
-        experiments_dict[exp].noncontrol_IDs.append(Replicate(replicate, is_control = False))
+        experiments_dict[exp].noncontrols.append(Replicate(replicate, is_control = False))
 
     for key, control in meta_table.loc[meta_table['Experiment accession'] == exp, 'Controlled by'].iteritems():
 
@@ -259,14 +322,14 @@ for exp, val in value_counts.iteritems():
             continue
 
         if len(control) > 2*accession_length:                               # Some controls are strangely organized
-            all_controls = val.split(',')
+            all_controls = control.split(',')
             for indiv_control in all_controls:
                 accession_only = indiv_control[-(accession_length+1):-1]
-                experiments_dict[exp].control_IDs.append(Replicate(accession_only, is_control = True))
+                experiments_dict[exp].controls.append(Replicate(accession_only, is_control = True))
         else:
-            accession_only = val[-(accession_length+1):-1]
+            accession_only = control[-(accession_length+1):-1]
             control_download = accesion_to_url(accession_only)
-            experiments_dict[exp].control_IDs.append(Replicate(accession_only, is_control = True))
+            experiments_dict[exp].controls.append(Replicate(accession_only, is_control = True))
 
 print(experiments_dict)
 print("number of studies", len(experiments_dict))
@@ -279,13 +342,13 @@ for exp, experiment in experiments_dict.items():
     if experiment_exists(exp, experiment):
         sys.stdout.write(exp)
         continue
-    experiment.control_IDs = list(set(experiment.control_IDs))
-    if len(experiment.noncontrol_IDs ) == 0 or len(experiment.control_IDs) == 0:                                     # Check if replicates or controls are empty
+    experiment.controls = list(set(experiment.controls))
+    if len(experiment.noncontrols) == 0 or len(experiment.controls) == 0:                                     # Check if replicates or controls are empty
         write_bad_exp(exp)
         continue
 
     experiment.process_experiment()
- 
+
 sys.stdout.write("FINISHED")
 
 
@@ -295,7 +358,7 @@ sys.stdout.write("FINISHED")
 #expToAccession['ENCSR000DKX'] = [['ENCFF000RPR', 'ENCFF000RPS'], []]
 #expToAccession['ENCSR000DNV'] = [['ENCFF000XBD', 'ENCFF000XBE'], ['ENCFF000XGP', 'ENCFF000XGP']]
 
-# 
+#
 
 
 

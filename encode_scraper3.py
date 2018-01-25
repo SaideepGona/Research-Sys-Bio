@@ -1,4 +1,3 @@
-import wget
 import os
 import pandas as pd
 import numpy as np
@@ -19,10 +18,7 @@ import requests, json
 # TO-DO
 # TODO Detect whether given experiment already has .bam or peaks
 # TODO Create alternative pipelines as needed
-
-class Pipeline:
-
-
+# TODO Use Hg38 reference genome
 
 class Experiment:
 
@@ -32,46 +28,77 @@ class Experiment:
         self.transcription_factor = transcription_factor
         self.noncontrols = noncontrols
         self.controls = controls
+        self.processed_file = None
 
     def assess_experiment(self):
         #Checks if .bam/peaks are present and stores this as a property
-        exp_json = get_request(self.accession_id)
-        files = exp_json['files']
+        exp_json = get_request(self.accession_id)                           # Gets json for given experiment and converts to dict
+        files = exp_json['files']                                           # Pulls out file list from expreiment json
         files_acc = [(file_string[7:])[:-1] for file_string in files]
-        file_types = [find_file_type(file_acc) for file_acc in files]
+        file_props = [find_file_props(acc) for acc in files_acc]
+        files = self.determine_file_state(file_props)
 
-        files = determine_file_state(file_types)
 
-
-    def determine_file_state(self, files, file_types):
+    def determine_file_state(self, file_props):
         """
         Determines the current level of processing for the experiment(fastq,bam,peak)
         Also returns a list of accessions for all files of the most-processed file type
         """
 
+        def is_fully_processed(self, file_props):
+            #first determine biological replicates
+            largest_group = []
+
+            for ind_file in file_props:
+                if ind_file[3] == None:
+                    continue
+                if len(ind_file[3]) > len(largest_group):
+                    largest_group = ind_file[3]
+
+            target_properties = ["bed narrowPeak", "peaks", largest_group]
+
+            for ind_file in file_props:
+                print(ind_file, largest_group)
+                if ind_file[1:] == target_properties:
+                    print("fully processed")
+                    self.processed_file = ind_file[0]
+                    return True
+
+
         fastq_files = []
         bam_files = []
         peak_files = []
 
-        for x in range(len(file_types)):
-            if file_types[x] == "fastq":
-                fastq_files.append(files[x])
-            elif file_types[x] == "bam":
-                fastq_files.append(files[x])
-            elif file_types[x] == "bed":
-                peak_files.append(files[x])
+        if is_fully_processed(self, file_props):
+            print("fully processed")
 
-        if len(peak_files) > 0:
-            self.file_state = "peaks"
-            return peak_files
-        elif len(bam_files) > 0:
+        # [accession, file_type, output_type, br] <- file preps is a list of these lists
+
+        for single_file in file_props:
+            file_type = single_file[1]
+            if file_props[1] == "fastq":
+                fastq_files.append(file_props[0])
+            elif file_props[1] == "bam":
+                bam_files.append(file_props[0])
+
+        if len(bam_files) > 0:
             self.file_state = "bams"
             return bam_files
         elif len(fastq_files) > 0:
-            self.file_state = "fastqs"
+            self.file_state = "fastq"
             return fastq_files
 
     def process_experiment(self):
+
+        print(self.processed_file, "about to process")
+        if self.processed_file != None:
+            download_link(accession_to_url(self.processed_file,".bed.gz"))
+            print("downloading completed peaks")
+            os.rename(self.processed_file + ".bed.gz", self.accession_id + ".bed.gz")
+            subprocess.run(["gunzip", self.accession_id + ".bed.gz"])
+            return
+        else:
+            return
 
         merged_noncontrols = self.create_merged_bam(self.accession_id, False)
         merged_controls = self.create_merged_bam(self.accession_id, True)
@@ -131,7 +158,7 @@ class Replicate:
         """
 
         subprocess.run(["touch", self.accession_id + ".place"])              # Creates a .place file as a placeholder
-        download_link(accesion_to_url(self.accession_id))
+        download_link(accession_to_url(self.accession_id, ".fastq.gz"))
         download_file = self.accession_id + ".fastq.gz"
         print("downloaded file")
         subprocess.run(["gunzip", download_file])                       # Unzip the .fastq.gz to a fastq
@@ -162,12 +189,14 @@ def get_request(accession):
 
     return response_dict
 
-def find_file_type(accession):
+def find_file_props(accession):
 
     response = get_request(accession)
-    file_type = response["file_format"]
+    file_type = response.get("file_type")
+    br = response.get("biological_replicates")
+    output_type = response.get("output_type")
 
-    return file_type
+    return [accession, file_type, output_type, br]
 
 def quick_check(file):
     """
@@ -204,12 +233,12 @@ def delete_file(filename):
     else:
         return
 
-def accesion_to_url(accession):
+def accession_to_url(accession, file_tag):
     """
     Converts a file accession to a relevant download URL
     """
 
-    url = 'https://www.encodeproject.org/files/' + accession + '/@@download/' + accession + '.fastq.gz'
+    url = 'https://www.encodeproject.org/files/' + accession + '/@@download/' + accession + file_tag
     return url
 
 
@@ -227,7 +256,6 @@ def experiment_exists(experiment_ID, experiment):
         if rep_bool:
             print("exists")
             return True
-        print(rep_bool)
         return False
 
 
@@ -239,6 +267,8 @@ def experiment_exists(experiment_ID, experiment):
             return True
 
     exp_bool = (os.path.isfile(experiment_ID + "-peaks.tsv")
+        or os.path.isfile(experiment_ID + "-bed.gz")
+        or os.path.isfile(experiment_ID + "-bed")
         or os.path.isfile(experiment_ID + "-narrowpeak.bed")
         or os.path.isfile(experiment_ID + "-summits.bed")
         or os.path.isfile(experiment_ID + "-log.txt")
@@ -328,7 +358,7 @@ for exp, val in value_counts.iteritems():
                 experiments_dict[exp].controls.append(Replicate(accession_only, is_control = True))
         else:
             accession_only = control[-(accession_length+1):-1]
-            control_download = accesion_to_url(accession_only)
+            control_download = accession_to_url(accession_only, "fastq.gz")
             experiments_dict[exp].controls.append(Replicate(accession_only, is_control = True))
 
 print(experiments_dict)
@@ -339,6 +369,7 @@ print(meta_table["Experiment target"].value_counts())
 
 bad_experiments = []
 for exp, experiment in experiments_dict.items():
+    print(exp)
     if experiment_exists(exp, experiment):
         sys.stdout.write(exp)
         continue
@@ -347,6 +378,7 @@ for exp, experiment in experiments_dict.items():
         write_bad_exp(exp)
         continue
 
+    experiment.assess_experiment()
     experiment.process_experiment()
 
 sys.stdout.write("FINISHED")

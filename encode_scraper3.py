@@ -20,6 +20,8 @@ import requests, json
 # TODO Create alternative pipelines as needed
 # TODO Use Hg38 reference genome
 
+distance_threshold_upstream = -1000                         #Permissable peak distances from transcription start site for inclusion
+distance_threshold_downstream = 100
 class Experiment:
 
     def __init__(self, accession_id, transcription_factor, noncontrols, controls):
@@ -28,10 +30,12 @@ class Experiment:
         self.transcription_factor = transcription_factor
         self.noncontrols = noncontrols
         self.controls = controls
+        self.file_state = None
         self.processed_file = None
 
     def assess_experiment(self):
         #Checks if .bam/peaks are present and stores this as a property
+        print("assess_experiment")
         exp_json = get_request(self.accession_id)                           # Gets json for given experiment and converts to dict
         files = exp_json['files']                                           # Pulls out file list from expreiment json
         files_acc = [(file_string[7:])[:-1] for file_string in files]
@@ -44,7 +48,7 @@ class Experiment:
         Determines the current level of processing for the experiment(fastq,bam,peak)
         Also returns a list of accessions for all files of the most-processed file type
         """
-
+        print("determine_file_state")
         def is_fully_processed(self, file_props):
             #first determine biological replicates
             largest_group = []
@@ -69,42 +73,147 @@ class Experiment:
         bam_files = []
         peak_files = []
 
-        if is_fully_processed(self, file_props):
+        if is_fully_processed(self, file_props):        #Handles the fully processed case
             print("fully processed")
+            self.file_state = "bed"
+
 
         # [accession, file_type, output_type, br] <- file preps is a list of these lists
 
         for single_file in file_props:
             file_type = single_file[1]
-            if file_props[1] == "fastq":
-                fastq_files.append(file_props[0])
-            elif file_props[1] == "bam":
-                bam_files.append(file_props[0])
+            if single_file[1] == "fastq" and len(single_file[3]) == 1:
+                fastq_files.append(single_file[0])
+            elif single_file[1] == "bam" and single_file[2] == "alignments":
+                replicate = Replicate(single_file[0], False)
+                bam_files.append(replicate)
+
+        print("BAM FILES:", bam_files)
+        print("FASTQ FILES", fastq_files)
 
         if len(bam_files) > 0:
+            print("PROCESSING BAMS")
             self.file_state = "bams"
+            self.bam_noncontrol_files = bam_files
+            self.bam_control_files = self.find_bam_controls()
             return bam_files
+
         elif len(fastq_files) > 0:
             self.file_state = "fastq"
             return fastq_files
 
+    def find_bam_controls(self):
+
+        print("find_bam_controls")
+
+        # Finds all control .bam files for the given experiment
+
+        response = get_request(self.accession_id)
+        controls = response["possible_controls"]
+        controls_acc = [(control_acc[13:])[:-1] for control_acc in controls]
+        all_control_bams = []
+        all_control_replicates = []
+
+        for control_exp in controls_acc:
+            control_bams = self.find_bams_in_controlexps(control_exp)
+            all_control_bams = all_control_bams + control_bams
+
+        for single_rep in all_control_bams:
+            all_control_replicates.append(Replicate(single_rep, True))
+
+        return all_control_replicates
+
+    def find_bams_in_controlexps(self, control_acc):
+
+        # Given a control experiment accession -> outputs all bam control files
+        print("find_bams_in_controlexps")
+        exp_json = get_request(self.accession_id)                           # Gets json for given experiment and converts to dict
+        files = exp_json['files']                                           # Pulls out file list from expreiment json
+        files_acc = [(file_string[7:])[:-1] for file_string in files]
+        file_props = [find_file_props(acc) for acc in files_acc]
+
+        target_properties = ["bam", "alignments"]
+
+        control_bams = []
+
+        for ind_file in file_props:
+            if ind_file[1:3] == target_properties:
+                control_bams.append(ind_file[0])
+
+        return control_bams
+
+
     def process_experiment(self):
 
-        print(self.processed_file, "about to process")
+        # Handles if file has already been processed
         if self.processed_file != None:
             download_link(accession_to_url(self.processed_file,".bed.gz"))
-            print("downloading completed peaks")
             os.rename(self.processed_file + ".bed.gz", self.accession_id + ".bed.gz")
             subprocess.run(["gunzip", self.accession_id + ".bed.gz"])
-            return
-        else:
+            print("downloading completed peaks")
+            #sys.stdout.flush()
+
             return
 
-        merged_noncontrols = self.create_merged_bam(self.accession_id, False)
-        merged_controls = self.create_merged_bam(self.accession_id, True)
+        if self.file_state == "bams":
+
+            try:
+
+                merged_noncontrols = self.create_merged_bam_no_alignment(False)
+                merged_controls = self.create_merged_bam_no_alignment(True)
+                self.create_macs_peak(merged_noncontrols, merged_controls)
+
+                print(self.accession_id, merged_noncontrols, merged_controls, "THESE ARE BAMS")
+                #sys.stdout.flush()
+
+                return
+
+            except:
+
+                merged_noncontrols = self.create_merged_bam(False)
+                merged_controls = self.create_merged_bam(True)
+                self.create_macs_peak(merged_noncontrols, merged_controls)
+
+        merged_noncontrols = self.create_merged_bam(False)
+        merged_controls = self.create_merged_bam(True)
         self.create_macs_peak(merged_noncontrols, merged_controls)
 
-    def create_merged_bam(self, experiment_ID, is_control):
+    def create_merged_bam_no_alignment(self, is_control):
+
+    # Given if we are working with reps or controls, takes the list of files and processes from fastq to merged bam
+    # depending on the current level of processing
+
+        if is_control:
+            current_reps = self.bam_control_files
+            merged_filename = "_merged_controls.bam"
+        else:
+            current_reps = self.bam_noncontrol_files
+            merged_filename = "_merged_noncontrols.bam"
+
+        rep_bam_files = []
+        for rep in current_reps:
+            bam_file = rep.download_only_bam()
+            rep_bam_files.append(bam_file)              # List of (accession + .bam) filenames to be merged
+
+        merged_file = self.accession_id + merged_filename
+
+        if len(rep_bam_files) == 1:
+            merged_file = rep_bam_files[0]
+        elif len(rep_bam_files) > 1:
+            subprocess.run(["samtools", "merge", merged_file]+rep_bam_files)
+
+        for rep_file in rep_bam_files:
+            delete_file(rep_file)
+            delete_file(rep_file[:-4]+".sam")
+            delete_file(rep_file[:-4]+".fastq")
+            delete_file(rep_file[:-4]+".place")
+
+        return merged_file
+
+    def create_merged_bam(self, is_control):
+
+        # Given if we are working with reps or controls, takes the list of files and processes from fastq to merged bam
+        # depending on the current level of processing
 
         if is_control:
             current_reps = self.controls
@@ -116,9 +225,9 @@ class Experiment:
         rep_bam_files = []
         for rep in current_reps:
             bam_file = rep.download_to_bam()
-            rep_bam_files.append(bam_file)
+            rep_bam_files.append(bam_file)              # List of (accession + .bam) filenames to be merged
 
-        merged_file = experiment_ID + merged_filename
+        merged_file = self.accession_id + merged_filename
 
         if len(rep_bam_files) == 1:
             merged_file = rep_bam_files[0]
@@ -143,6 +252,35 @@ class Experiment:
 
         delete_file(merged_noncontrols)
         delete_file(merged_controls)
+
+    def annotate_experiment(self):
+
+        if self.file_state == None:
+            experiment_bed_file = self.accession_id + ".bed"
+        else:
+            experiment_bed_file = self.accession_id + "_summits.bed"
+
+        annotate_out = self.accession_id +  ".txt"
+        annotation_file = open(annotate_out, 'w')
+        annotate_process = subprocess.Popen(["annotatePeaks.pl", experiment_bed_file, "hg38"], stderr=None, stdout=annotate_out)
+        output = annotate_process.communicate()
+
+    def process_annotation(self):
+
+        annotation_df = pandas.read_csv(self.accession_id + ".txt", sep='\t')
+        # Insert filtering criteria below
+        distance_df = (annotation_df[(annotation_df["Distance to TSS"] > distance_threshold_upstream) \
+                            & (annotation_df["Distance to TSS"] < distance_threshold_downstream) \
+                            ])
+
+        all_genes = []
+        for index, row in distance_df.iterrows():
+            all_genes.append(str(row["Gene Name"]))
+
+        write_list = [self.transcription_factor] + all_genes
+
+        out_file = open(self.accession_id + ".tfgenes", 'w')
+        out_file.write("\n".join(write_list))
 
 
 class Replicate:
@@ -179,6 +317,11 @@ class Replicate:
         quick_check(bam_out)
 
         return bam_out
+
+    def download_only_bam(self):
+
+        download_link(accession_to_url(self.accession_id, ".bam"))
+        return self.accession_id + ".bam"
 
 def get_request(accession):
 
@@ -267,8 +410,9 @@ def experiment_exists(experiment_ID, experiment):
             return True
 
     exp_bool = (os.path.isfile(experiment_ID + "-peaks.tsv")
-        or os.path.isfile(experiment_ID + "-bed.gz")
-        or os.path.isfile(experiment_ID + "-bed")
+        or os.path.isfile(experiment_ID + ".place")
+        or os.path.isfile(experiment_ID + ".bed.gz")
+        or os.path.isfile(experiment_ID + ".bed")
         or os.path.isfile(experiment_ID + "-narrowpeak.bed")
         or os.path.isfile(experiment_ID + "-summits.bed")
         or os.path.isfile(experiment_ID + "-log.txt")
@@ -280,7 +424,7 @@ def experiment_exists(experiment_ID, experiment):
     )
     if exp_bool:
         print(experiment_ID, "exists")
-        sys.stdout.flush()
+        #sys.stdout.flush()
         return True
     return False
 
@@ -304,9 +448,9 @@ files_txt_list = []
 with open("files.txt") as f:                                # Open files.txt and pull out link to metadata.
     for line in f:
         files_txt_list.append(line.strip())
-metadata = files_txt_list[0]
 
 if os.path.isfile('metadata.tsv') == False:                 # If metadata.tsv does not exist download it and read it as a dataframe
+    metadata = files_txt_list[0]
     download_link(metadata)
     meta_table = pd.read_table('metadata.tsv')
 else:
@@ -317,14 +461,15 @@ print(meta_table)
 # DOWNLOAD HG19 REFERENCE GENOME ***********************************************************************************
 
 global reference_genome
-reference_genome = "hg19ind"
-ref_download_filename = "chromFa.tar.gz"
+reference_genome = "hg38ind"
+ref_download_filename = "hg38.chromFa.tar.gz"
 if os.path.isfile(ref_download_filename) == False:
-    ref_url = "http://hgdownload.cse.ucsc.edu/goldenPath/hg19/bigZips/" + ref_download_filename
+    subprocess.run(["touch", reference_genome + ".place"])
+    ref_url = "http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/" + ref_download_filename
     download_link(ref_url)
     subprocess.run(["gunzip", ref_download_filename])
-    subprocess.run(["tar", "xkf", ref_download_filename[0:-3]])
-    subprocess.run(["cat", "*.fa", ">>", "reference.fa"])
+    subprocess.run(["tar", "-xkf", ref_download_filename[0:-3]])
+    subprocess.run(["cat", "chroms/*.fa", ">", "reference.fa"])
     subprocess.run(["bowtie2-build", "reference.fa", reference_genome])         #Builds reference genome
 
 # *****************************************************************************************************************
@@ -377,9 +522,10 @@ for exp, experiment in experiments_dict.items():
     if len(experiment.noncontrols) == 0 or len(experiment.controls) == 0:                                     # Check if replicates or controls are empty
         write_bad_exp(exp)
         continue
-
+    subprocess.run(["touch", experiment.accession_id + ".place"])
     experiment.assess_experiment()
     experiment.process_experiment()
+    experiment.annotate_experiment()
 
 sys.stdout.write("FINISHED")
 

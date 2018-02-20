@@ -5,6 +5,8 @@ import subprocess
 import urllib
 import sys
 import requests, json
+import glob
+import time
 
 # Dependencies:
 # python libraries above
@@ -22,6 +24,15 @@ import requests, json
 
 distance_threshold_upstream = -1000                         #Permissable peak distances from transcription start site for inclusion
 distance_threshold_downstream = 100
+time = str(time.time())
+scratch_path_part = "/scratch/sgona/"
+scratch_path = scratch_path_part + time +"/"
+subprocess.run(["mkdir", "-p", scratch_path_part])
+subprocess.run(["mkdir", "-p", scratch_path+"/tmp/"])
+# scratch_path = "/home/saideep/Documents/GitHub_Repos/Saideep/MSCB_Sem1/Research/Research-Sys-Bio/"+time+"/"
+# subprocess.run(["mkdir", scratch_path])
+
+
 class Experiment:
 
     def __init__(self, accession_id, transcription_factor, noncontrols, controls):
@@ -34,21 +45,18 @@ class Experiment:
         self.processed_file = None
 
     def assess_experiment(self):
-        #Checks if .bam/peaks are present and stores this as a property
-        print("assess_experiment")
+        #Checks if .bam/peaks are present and stores this as a property)
         exp_json = get_request(self.accession_id)                           # Gets json for given experiment and converts to dict
         files = exp_json['files']                                           # Pulls out file list from expreiment json
         files_acc = [(file_string[7:])[:-1] for file_string in files]
         file_props = [find_file_props(acc) for acc in files_acc]
         files = self.determine_file_state(file_props)
 
-
     def determine_file_state(self, file_props):
         """
-        Determines the current level of processing for the experiment(fastq,bam,peak)
+        Determines the current level of processing for the experiment(fastq,bam,bed)
         Also returns a list of accessions for all files of the most-processed file type
         """
-        print("determine_file_state")
         def is_fully_processed(self, file_props):
             #first determine biological replicates
             largest_group = []
@@ -62,19 +70,15 @@ class Experiment:
             target_properties = ["bed narrowPeak", "peaks", largest_group]
 
             for ind_file in file_props:
-                print(ind_file, largest_group)
                 if ind_file[1:] == target_properties:
-                    print("fully processed")
                     self.processed_file = ind_file[0]
                     return True
-
 
         fastq_files = []
         bam_files = []
         peak_files = []
 
         if is_fully_processed(self, file_props):        #Handles the fully processed case
-            print("fully processed")
             self.file_state = "bed"
 
 
@@ -88,11 +92,7 @@ class Experiment:
                 replicate = Replicate(single_file[0], False)
                 bam_files.append(replicate)
 
-        print("BAM FILES:", bam_files)
-        print("FASTQ FILES", fastq_files)
-
         if len(bam_files) > 0:
-            print("PROCESSING BAMS")
             self.file_state = "bams"
             self.bam_noncontrol_files = bam_files
             self.bam_control_files = self.find_bam_controls()
@@ -105,6 +105,7 @@ class Experiment:
     def find_bam_controls(self):
 
         print("find_bam_controls")
+        sys.stdout.flush()
 
         # Finds all control .bam files for the given experiment
 
@@ -113,22 +114,24 @@ class Experiment:
         controls_acc = [(control_acc[13:])[:-1] for control_acc in controls]
         all_control_bams = []
         all_control_replicates = []
-
-        for control_exp in controls_acc:
+        print(controls_acc, "control accessions, can have files within them")
+        for control_exp in [controls_acc[0]]:
             control_bams = self.find_bams_in_controlexps(control_exp)
+            print(control_bams)
             all_control_bams = all_control_bams + control_bams
+            all_control_bams = list(set(all_control_bams))
 
         for single_rep in all_control_bams:
             all_control_replicates.append(Replicate(single_rep, True))
 
         return all_control_replicates
 
+
     def find_bams_in_controlexps(self, control_acc):
 
         # Given a control experiment accession -> outputs all bam control files
-        print("find_bams_in_controlexps")
-        exp_json = get_request(self.accession_id)                           # Gets json for given experiment and converts to dict
-        files = exp_json['files']                                           # Pulls out file list from expreiment json
+        exp_json = get_request(control_acc)                           # Gets json for given experiment and converts to dict
+        files = exp_json['files']                                           # Pulls out file list from experiment json
         files_acc = [(file_string[7:])[:-1] for file_string in files]
         file_props = [find_file_props(acc) for acc in files_acc]
 
@@ -139,50 +142,44 @@ class Experiment:
         for ind_file in file_props:
             if ind_file[1:3] == target_properties:
                 control_bams.append(ind_file[0])
-
+        print(control_bams)
         return control_bams
-
 
     def process_experiment(self):
 
-        # Handles if file has already been processed
-        if self.processed_file != None:
-            download_link(accession_to_url(self.processed_file,".bed.gz"))
-            os.rename(self.processed_file + ".bed.gz", self.accession_id + ".bed.gz")
-            subprocess.run(["gunzip", self.accession_id + ".bed.gz"])
-            print("downloading completed peaks")
-            #sys.stdout.flush()
+        '''
+        Given the "state" of the experiment, performs steps until .bed output for the experiment
+        '''
 
+        sys.stdout.flush()
+        # Handles if file has already been processed
+        if self.file_state == "bed":
+            download_link(accession_to_url(self.processed_file,".bed.gz"))
+            os.rename(scratch_path + self.processed_file + ".bed.gz", scratch_path + self.accession_id + ".bed.gz")
+            subprocess.run(["gunzip", scratch_path + self.accession_id + ".bed.gz"])
+            #sys.stdout.flush()
             return
 
-        if self.file_state == "bams":
+        elif self.file_state == "bams":
 
-            try:
+            merged_noncontrols = self.create_merged_bam_no_alignment(False)
+            merged_controls = self.create_merged_bam_no_alignment(True)
+            print(merged_controls, merged_noncontrols, "BOTH MERGED BAM FILES")
+            sys.stdout.flush()
+            self.create_macs_peak(merged_noncontrols, merged_controls)
+            #sys.stdout.flush()
 
-                merged_noncontrols = self.create_merged_bam_no_alignment(False)
-                merged_controls = self.create_merged_bam_no_alignment(True)
-                self.create_macs_peak(merged_noncontrols, merged_controls)
-
-                print(self.accession_id, merged_noncontrols, merged_controls, "THESE ARE BAMS")
-                #sys.stdout.flush()
-
-                return
-
-            except:
-
-                merged_noncontrols = self.create_merged_bam(False)
-                merged_controls = self.create_merged_bam(True)
-                self.create_macs_peak(merged_noncontrols, merged_controls)
-
-        merged_noncontrols = self.create_merged_bam(False)
-        merged_controls = self.create_merged_bam(True)
-        self.create_macs_peak(merged_noncontrols, merged_controls)
+        elif self.file_state == "fastq":
+            merged_noncontrols = self.create_merged_bam(False)
+            merged_controls = self.create_merged_bam(True)
+            self.create_macs_peak(merged_noncontrols, merged_controls)
 
     def create_merged_bam_no_alignment(self, is_control):
 
     # Given if we are working with reps or controls, takes the list of files and processes from fastq to merged bam
     # depending on the current level of processing
-
+        print("MERGING BAMS-no alignment")
+        sys.stdout.flush()
         if is_control:
             current_reps = self.bam_control_files
             merged_filename = "_merged_controls.bam"
@@ -195,12 +192,12 @@ class Experiment:
             bam_file = rep.download_only_bam()
             rep_bam_files.append(bam_file)              # List of (accession + .bam) filenames to be merged
 
-        merged_file = self.accession_id + merged_filename
+        merged_file = scratch_path + self.accession_id + merged_filename
 
         if len(rep_bam_files) == 1:
             merged_file = rep_bam_files[0]
         elif len(rep_bam_files) > 1:
-            subprocess.run(["samtools", "merge", merged_file]+rep_bam_files)
+            subprocess.run(["stdbuf", "-o", "500MB","samtools", "merge", merged_file]+rep_bam_files)
 
         for rep_file in rep_bam_files:
             delete_file(rep_file)
@@ -209,6 +206,7 @@ class Experiment:
             delete_file(rep_file[:-4]+".place")
 
         return merged_file
+
 
     def create_merged_bam(self, is_control):
 
@@ -227,10 +225,10 @@ class Experiment:
             bam_file = rep.download_to_bam()
             rep_bam_files.append(bam_file)              # List of (accession + .bam) filenames to be merged
 
-        merged_file = self.accession_id + merged_filename
+        merged_file = scratch_path + self.accession_id + merged_filename
 
         if len(rep_bam_files) == 1:
-            merged_file = rep_bam_files[0]
+            merged_file = scratch_path + rep_bam_files[0]
         elif len(rep_bam_files) > 1:
             subprocess.run(["samtools", "merge", merged_file]+rep_bam_files)
 
@@ -243,31 +241,43 @@ class Experiment:
         return merged_file
 
     def create_macs_peak(self, merged_noncontrols, merged_controls):
+        #print(glob.glob(scratch_path + "*"))
+        print("DIRECTLY PRIOR TO PEAK CALLING FILE STATE IS", self.file_state)
+        print(merged_controls,merged_noncontrols)
+        sys.stdout.flush()
 
-        try:
-            subprocess.run(["macs2", "callpeak", "-t", merged_noncontrols, "-c", merged_controls, "-n", self.accession_id]) # Call Macs Peak of the merged files
-        except:
-            sys.stdout.write("Problem running MACS2")
-            sys.exit()
+        subprocess.run(["macs2", "callpeak", "--tempdir", scratch_path + "/tmp/", "-t", merged_noncontrols, "-c", merged_controls, "-n", self.accession_id, "--outdir", scratch_path]) # Call Macs Peak of the merged files
+        subprocess.run(["cp", scratch_path + self.accession_id + "_summits.bed", "/home/sgona/encode_scraper"])
 
         delete_file(merged_noncontrols)
         delete_file(merged_controls)
 
     def annotate_experiment(self):
 
-        if self.file_state == None:
-            experiment_bed_file = self.accession_id + ".bed"
-        else:
-            experiment_bed_file = self.accession_id + "_summits.bed"
+       # print(glob.glob(scratch_path + "*"))
+        print("DIRECTLY PRIOR TO ANNOTATION FILE STATE IS", self.file_state)
+        sys.stdout.flush()
 
-        annotate_out = self.accession_id +  ".txt"
+        if self.file_state == "bed":
+            experiment_bed_file = scratch_path + self.accession_id + ".bed"
+        else:
+            experiment_bed_file = scratch_path + self.accession_id + "_summits.bed"
+
+        annotate_out = self.accession_id + ".tsv"
         annotation_file = open(annotate_out, 'w')
-        annotate_process = subprocess.Popen(["annotatePeaks.pl", experiment_bed_file, "hg38"], stderr=None, stdout=annotate_out)
+        annotate_process = subprocess.Popen(["annotatePeaks.pl", experiment_bed_file, "hg38"], stderr=None, stdout=annotation_file)
         output = annotate_process.communicate()
+        annotation_file.close()
 
     def process_annotation(self):
 
-        annotation_df = pandas.read_csv(self.accession_id + ".txt", sep='\t')
+        #print(glob.glob(scratch_path + "*"))
+        print("DIRECTLY PRIOR TO ANNOTATION PROCESSING FILE STATE IS", self.file_state)
+        sys.stdout.flush()
+
+        annotation_df = pd.read_csv(self.accession_id + ".tsv", sep='\t')
+        threshold_file = open(scratch_path + str(distance_threshold_upstream)+"_"+str(distance_threshold_downstream)+".tableprobs", 'w') #Make tableprops file
+        threshold_file.close()
         # Insert filtering criteria below
         distance_df = (annotation_df[(annotation_df["Distance to TSS"] > distance_threshold_upstream) \
                             & (annotation_df["Distance to TSS"] < distance_threshold_downstream) \
@@ -280,8 +290,9 @@ class Experiment:
         write_list = [self.transcription_factor] + all_genes
 
         out_file = open(self.accession_id + ".tfgenes", 'w')
-        out_file.write("\n".join(write_list))
-
+        sys.stdout.flush()
+        out_file.write("\n".join(write_list) + "\n")
+        out_file.close()
 
 class Replicate:
 
@@ -295,19 +306,17 @@ class Replicate:
         Downloads a fastq for a given accession ID, and processes it into a corresponding .bam file
         """
 
-        subprocess.run(["touch", self.accession_id + ".place"])              # Creates a .place file as a placeholder
+        subprocess.run(["touch", scratch_path + self.accession_id + ".place"])              # Creates a .place file as a placeholder
         download_link(accession_to_url(self.accession_id, ".fastq.gz"))
-        download_file = self.accession_id + ".fastq.gz"
-        print("downloaded file")
+        download_file = scratch_path + self.accession_id + ".fastq.gz"
         subprocess.run(["gunzip", download_file])                       # Unzip the .fastq.gz to a fastq
-        print("unzipped")
         delete_file(download_file)
         # Align .fastq and output .sam; .sam is piped into samtools view to output .bam
 
-        bam_out = self.accession_id + ".bam"
+        bam_out = scratch_path + self.accession_id + ".bam"
         bam_file = open(bam_out, 'w')
         alignment_process = subprocess.Popen(["bowtie2", "-x ", reference_genome, "-U", download_file[0:-3]], bufsize = 500*10**6, stderr=None, stdout=subprocess.PIPE)
-        sam_to_bam_process = subprocess.Popen(["samtools", "view", "-bSu", "-"], stderr=None, stdin=alignment_process.stdout, stdout=bam_file)
+        sam_to_bam_process = subprocess.Popen(["stdbuf", "-o", "1000MB", "samtools", "view", "-bSu", "-"], stderr=None, stdin=alignment_process.stdout, stdout=bam_file)
         alignment_process.stdout.close()
         output = sam_to_bam_process.communicate()
         alignment_process.wait()
@@ -321,7 +330,7 @@ class Replicate:
     def download_only_bam(self):
 
         download_link(accession_to_url(self.accession_id, ".bam"))
-        return self.accession_id + ".bam"
+        return scratch_path + self.accession_id + ".bam"
 
 def get_request(accession):
 
@@ -347,11 +356,11 @@ def quick_check(file):
     will cancel the job and write the filename to stdout
     """
     check_out = subprocess.run(["samtools", "quickcheck", "-v", file])
-    print(check_out)
 
     if check_out.returncode != 0:
         print("quickcheck failed")
         sys.stderr.write("Truncated File:" + file)
+        sys.stdout.flush()
         sys.exit()
 
 def download_link(url):
@@ -359,11 +368,9 @@ def download_link(url):
     Download from link url. If there is an error along the way, tries again with continue invoked
     """
 
-    try:
-        print("downloading")
-        subprocess.run(["wget", "-c", url])
-    except:
-        download_link(url)
+
+    subprocess.run(["wget", "-nv","-c", url, "-P", scratch_path])
+
 
 def delete_file(filename):
     """
@@ -372,7 +379,6 @@ def delete_file(filename):
 
     if os.path.isfile(filename) == True:
         os.remove(filename)
-        sys.stdout.write(filename + "deleted")
     else:
         return
 
@@ -389,6 +395,7 @@ def experiment_exists(experiment_ID, experiment):
     """
     Checks if an experiment has already been processed or is being processed
     """
+
     def extension_exists(root):
         rep_bool = (os.path.isfile(root + ".fastq.gz")
             or os.path.isfile(root + ".fastq")
@@ -403,24 +410,24 @@ def experiment_exists(experiment_ID, experiment):
 
 
     for noncontrol in experiment.noncontrols:
-        if extension_exists(noncontrol.accession_id):
+        if extension_exists(scratch_path + noncontrol.accession_id):
             return True
     for control in experiment.controls:
-        if extension_exists(control.accession_id):
+        if extension_exists(scratch_path + control.accession_id):
             return True
 
-    exp_bool = (os.path.isfile(experiment_ID + "-peaks.tsv")
-        or os.path.isfile(experiment_ID + ".place")
-        or os.path.isfile(experiment_ID + ".bed.gz")
-        or os.path.isfile(experiment_ID + ".bed")
-        or os.path.isfile(experiment_ID + "-narrowpeak.bed")
-        or os.path.isfile(experiment_ID + "-summits.bed")
-        or os.path.isfile(experiment_ID + "-log.txt")
-        or os.path.isfile(experiment_ID + "-model.pdf")
-        or os.path.isfile(experiment_ID + "_peaks.narrowpeak")
-        or os.path.isfile(experiment_ID + "_peaks.xls")
-        or os.path.isfile(experiment_ID + "_summits.bed")
-        or os.path.isfile(experiment_ID + "_model.r")
+    exp_bool = (os.path.isfile(scratch_path+experiment_ID + "-peaks.tsv")
+        or os.path.isfile(scratch_path+experiment_ID + ".place")
+        or os.path.isfile(scratch_path+experiment_ID + ".bed.gz")
+        or os.path.isfile(scratch_path+experiment_ID + ".bed")
+        or os.path.isfile(scratch_path+experiment_ID + "-narrowpeak.bed")
+        or os.path.isfile(scratch_path+experiment_ID + "-summits.bed")
+        or os.path.isfile(scratch_path+experiment_ID + "-log.txt")
+        or os.path.isfile(scratch_path+experiment_ID + "-model.pdf")
+        or os.path.isfile(scratch_path+experiment_ID + "_peaks.narrowpeak")
+        or os.path.isfile(scratch_path+experiment_ID + "_peaks.xls")
+        or os.path.isfile(scratch_path+experiment_ID + "_summits.bed")
+        or os.path.isfile(scratch_path+experiment_ID + "_model.r")
     )
     if exp_bool:
         print(experiment_ID, "exists")
@@ -444,18 +451,21 @@ def write_bad_exp(exp_accession):
 
 # DOWNLOAD METADATA AND READ IN AS A DATAFRAME **********************************************************************
 
-files_txt_list = []
-with open("files.txt") as f:                                # Open files.txt and pull out link to metadata.
-    for line in f:
-        files_txt_list.append(line.strip())
+input_file = sys.argv[1]
+meta_table = pd.read_table(input_file)
 
-if os.path.isfile('metadata.tsv') == False:                 # If metadata.tsv does not exist download it and read it as a dataframe
-    metadata = files_txt_list[0]
-    download_link(metadata)
-    meta_table = pd.read_table('metadata.tsv')
-else:
-    meta_table = pd.read_table('metadata.tsv')               # If metadata.tsv exists, read as dataframe
-print(meta_table)
+#files_txt_list = []
+#with open("files.txt") as f:                                # Open files.txt and pull out link to metadata.
+#    for line in f:
+#        files_txt_list.append(line.strip())
+
+#if os.path.isfile('metadata.tsv') == False:                 # If metadata.tsv does not exist download it and read it as a dataframe
+#    metadata = files_txt_list[0]
+#    download_link(metadata)
+#    meta_table = pd.read_table('metadata.tsv')
+#else:
+#    meta_table = pd.read_table('metadata.tsv')               # If metadata.tsv exists, read as dataframe
+
 
 # ******************************************************************************************************************
 # DOWNLOAD HG19 REFERENCE GENOME ***********************************************************************************
@@ -506,15 +516,14 @@ for exp, val in value_counts.iteritems():
             control_download = accession_to_url(accession_only, "fastq.gz")
             experiments_dict[exp].controls.append(Replicate(accession_only, is_control = True))
 
-print(experiments_dict)
-print("number of studies", len(experiments_dict))
-print(meta_table["Experiment target"].value_counts())
+# print(experiments_dict)
+# print("number of studies", len(experiments_dict))
+# print(meta_table["Experiment target"].value_counts())
 # *****************************************************************************************************************
 # CREATE MACS PEAK FOR EACH EXPERIMENT ****************************************************************************
 
 bad_experiments = []
 for exp, experiment in experiments_dict.items():
-    print(exp)
     if experiment_exists(exp, experiment):
         sys.stdout.write(exp)
         continue
@@ -522,10 +531,13 @@ for exp, experiment in experiments_dict.items():
     if len(experiment.noncontrols) == 0 or len(experiment.controls) == 0:                                     # Check if replicates or controls are empty
         write_bad_exp(exp)
         continue
-    subprocess.run(["touch", experiment.accession_id + ".place"])
+    subprocess.run(["touch", scratch_path+experiment.accession_id + ".place"])
+    print(experiment.accession_id)
+    sys.stdout.flush()
     experiment.assess_experiment()
     experiment.process_experiment()
     experiment.annotate_experiment()
+    #experiment.process_annotation()
 
 sys.stdout.write("FINISHED")
 
@@ -540,3 +552,5 @@ sys.stdout.write("FINISHED")
 
 
 
+
+# srun -p -zbj1 --pty /bin/bash --nodelist= compute-1-16

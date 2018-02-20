@@ -30,7 +30,4 @@ def cancel_jobs():       # Cancels all jobs
 
 while True:                           # While loop with sleep interval between SizeCheck executions
     total_sum = size_check()
-    print(total_sum)
-    print(time.time())
-    sys.stdout.flush()
     time.sleep(30)

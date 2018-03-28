@@ -1,0 +1,21 @@
+#!/bin/bash
+
+partition_count=40
+path=_inputdatageo.tsv
+
+python3 partition_inputs_geo.py $partition_count
+
+for job in {1..20}
+do
+echo $job$path
+sbatch batch_submit_geo_scraper $job$path
+sleep 1s
+done
+sbatch batch_submit_err
+
+for job in {21..40}
+do
+echo $job$path
+sbatch batch_submit_geo_scraper_pool $job$path
+sleep 1s
+done

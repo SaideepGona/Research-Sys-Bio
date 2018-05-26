@@ -83,6 +83,8 @@ def position_mod(pos, direction, amount):
 
 
 def get_conservation(pos):
+    ''' Collects conservation score given location of interest'''
+
     url="https://genome.ucsc.edu/cgi-bin/hgTables?"
     form_data={'hgsid':'666516159_sXwdmHvVwfpAowRRzGB5IcIEdQNY',
                          'clade':'mammal',
@@ -116,6 +118,8 @@ def get_conservation(pos):
     return out, mean, var
 
 def get_gc(pos):
+    ''' Collects gc content % given location of interest'''
+
     url="https://genome.ucsc.edu/cgi-bin/hgTables?"
     form_data={'hgsid':'666320311_Bf9AWctuHMXX5QeBndjSHJ95M99Z',
             'clade':'mammal',
@@ -143,6 +147,7 @@ def get_gc(pos):
     return mean
 
 def get_histone(pos, histone):
+    ''' Collects histone acetylation score given location of interest. Can specify histone type'''
     print('hist')
     url="https://genome.ucsc.edu/cgi-bin/hgTables?"
     form_data={'hgsid': '666806887_se33NbCPAKBp23Zk2OAYrQ0p4ZgT',
@@ -186,6 +191,8 @@ if not os.path.exists(ranged_file+".rand"):
     os.system(randomize)
 
 
+#
+
 with open(ranged_file+".rand", 'r') as ranged:
     with open(output_data, 'w') as out:
         for i, line in enumerate(ranged):
@@ -197,7 +204,7 @@ with open(ranged_file+".rand", 'r') as ranged:
             new_l = split_l[0:3]
             position_str = split_l[0]+':'+split_l[1]+'-'+split_l[2]
 
-            y = [10000,9900,5000]
+            y = [10000,9900,5000]  # Different window sizes (max window size - list value)
             for x in range(len(y)):
 
                 cons, mean_cons, var_cons = get_conservation(position_mod(position_str,'less', 9900))

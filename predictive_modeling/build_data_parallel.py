@@ -2,6 +2,8 @@ import os
 import sys
 from multiprocessing import Process
 
+# Script for running multiple parallel feature construction scripts
+
 input_file = sys.argv[1]        # Name of input bed file
 training = sys.argv[2]          # Boolean true if it is training data
 range_val = sys.argv[3]         # Max range around each peak to be considered
@@ -15,6 +17,7 @@ instances = int(instances)
 
 
 def run_build(start, end):
+    ''' Runs an instance of the data construction script given the lines in the document to be computed'''
     process_core = "python3 build_data.py "+input_file+" "+training+" "+range_val+" "+tf_density_data+" "
     process_full = process_core +str(start)+" "+str(end)
     os.system(process_full)

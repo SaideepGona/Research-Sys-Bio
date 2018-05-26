@@ -1,0 +1,10 @@
+#!/bin/bash
+#SBATCH -p zbj1
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=6
+#SBATCH --mem-per-cpu=8G
+#SBATCH --error=myjobresults-%J.err
+#SBATCH --output=myjobresults-%J.out
+#SBATCH --job-name=annotate_peaks
+
+python3 annotate_peaks.py

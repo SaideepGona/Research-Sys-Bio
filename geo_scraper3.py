@@ -7,6 +7,8 @@ import sys
 import requests, json
 import glob
 import time
+import profile
+import multiprocessing
 
 # Dependencies:
 # python libraries above
@@ -30,6 +32,7 @@ scratch_path = scratch_path_part + time +"/"
 # scratch_path = ""
 subprocess.run(["mkdir", "-p", scratch_path_part])
 subprocess.run(["mkdir", "-p", scratch_path+"/tmp/"])
+num_cpus = multiprocessing.cpu_count()
 # scratch_path = "/home/saideep/Documents/GitHub_Repos/Saideep/MSCB_Sem1/Research/Research-Sys-Bio/"+time+"/"
 # subprocess.run(["mkdir", scratch_path])
 
@@ -244,7 +247,7 @@ class Experiment:
         if len(rep_bam_files) == 1:
             merged_file = rep_bam_files[0]
         elif len(rep_bam_files) > 1:
-            subprocess.run(["samtools", "merge", merged_file]+rep_bam_files)
+            subprocess.run(["samtools", "merge", "-@", "4", merged_file]+rep_bam_files)
 
         for rep_file in rep_bam_files:
             if len(rep_bam_files) > 1:
@@ -263,6 +266,9 @@ class Experiment:
 
         subprocess.run(["macs2", "callpeak", "--tempdir", scratch_path + "/tmp/", "-t", merged_noncontrols, "-c", merged_controls, "-n", self.accession_id, "--outdir", scratch_path]) # Call Macs Peak of the merged files
         subprocess.run(["cp", scratch_path + self.accession_id + "_summits.bed", "/home/sgona/encode_scraper"])
+        subprocess.run(["cp", scratch_path + self.accession_id + "_model.r", "/home/sgona/encode_scraper"])
+        subprocess.run(["cp", scratch_path + self.accession_id + "_peaks.xls", "/home/sgona/encode_scraper"])
+        subprocess.run(["cp", scratch_path + self.accession_id + "_peaks.narrowPeak", "/home/sgona/encode_scraper"])
 
         delete_file(merged_noncontrols)
         delete_file(merged_controls)
@@ -333,7 +339,7 @@ class Replicate:
 
         bam_out = scratch_path + self.accession_id + ".bam"
         bam_file = open(bam_out, 'w')
-        alignment_process = subprocess.Popen(["bowtie2", "-x ", reference_genome, "-U", download_file], bufsize = 500*10**6, stderr=None, stdout=subprocess.PIPE)
+        alignment_process = subprocess.Popen(["bowtie2","-p", str(num_cpus), "-x", reference_genome, "-U", download_file], bufsize = 500*10**6, stderr=None, stdout=subprocess.PIPE)
         sam_to_bam_process = subprocess.Popen(["stdbuf", "-o", "1000MB", "samtools", "view", "-bSu", "-"], stderr=None, stdin=alignment_process.stdout, stdout=bam_file)
         alignment_process.stdout.close()
         output = sam_to_bam_process.communicate()
@@ -591,9 +597,9 @@ for exp, experiment in experiments_dict.items():
     print(experiment.accession_id)
     sys.stdout.flush()
     # experiment.assess_experiment()
-    process_exp = experiment.process_experiment()
-    if process_exp == None:
-        continue
-    experiment.annotate_experiment()
+    profile.run('experiment.process_experiment()')
+    # if process_exp == None:
+        # continue
+    #experiment.annotate_experiment()
     #experiment.process_annotation()
 

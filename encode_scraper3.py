@@ -197,7 +197,7 @@ class Experiment:
         if len(rep_bam_files) == 1:
             merged_file = rep_bam_files[0]
         elif len(rep_bam_files) > 1:
-            subprocess.run(["stdbuf", "-o", "500MB","samtools", "merge", merged_file]+rep_bam_files)
+            subprocess.run(["stdbuf", "-o", "500MB","samtools", "merge", "-@", "4", merged_file]+rep_bam_files)
 
         for rep_file in rep_bam_files:
             delete_file(rep_file)
@@ -248,6 +248,9 @@ class Experiment:
 
         subprocess.run(["macs2", "callpeak", "--tempdir", scratch_path + "/tmp/", "-t", merged_noncontrols, "-c", merged_controls, "-n", self.accession_id, "--outdir", scratch_path]) # Call Macs Peak of the merged files
         subprocess.run(["cp", scratch_path + self.accession_id + "_summits.bed", "/home/sgona/encode_scraper"])
+        subprocess.run(["cp", scratch_path + self.accession_id + "_model.r", "/home/sgona/encode_scraper"])
+        subprocess.run(["cp", scratch_path + self.accession_id + "_peaks.xls", "/home/sgona/encode_scraper"])
+        subprocess.run(["cp", scratch_path + self.accession_id + "_peaks.narrowPeak", "/home/sgona/encode_scraper"])
 
         delete_file(merged_noncontrols)
         delete_file(merged_controls)

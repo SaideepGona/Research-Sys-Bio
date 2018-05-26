@@ -14,7 +14,8 @@ else:
 if len(sys.argv) > 2:
     full_meta_table = pd.read_table(sys.argv[2])
 
-completed_exps = [file_name[:-4] for file_name in glob.glob("*.tsv")]   # Finds all completed experiments
+completed_exps = [file_name[:-10] for file_name in glob.glob("*_peaks.xls")]   # Finds all completed experiments
+completed_exps = completed_exps + [file_name[:-8] for file_name in glob.glob("*.skipped")]
 print(completed_exps)
 sys.stdout.flush()
 

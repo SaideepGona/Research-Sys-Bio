@@ -28,7 +28,8 @@ if os.path.isfile('metadata.tsv') == False:                 # If metadata.tsv do
 else:
     full_meta_table = pd.read_table('metadata.tsv')
 
-completed_exps = [file_name[:-4] for file_name in glob.glob("*.tsv")]
+completed_exps = [file_name[:-10] for file_name in glob.glob("*_peaks.xls")]   # Finds all completed experiments
+completed_exps = completed_exps + [file_name[:-8] for file_name in glob.glob("*.skipped")]
 print(completed_exps)
 sys.stdout.flush()
 

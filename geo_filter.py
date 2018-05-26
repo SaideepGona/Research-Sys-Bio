@@ -7,11 +7,14 @@ from fuzzysearch import find_near_matches
 from fuzzywuzzy import process
 import sys
 
+# PARSES THE FULL GEO METADATA TABLE WITH CONTEXT FROM THE AND TRIES TO MAKE "SENSE" OF IT. OUTPUTS A RELAVENT
+# METADATA TABLE FOR DOWNSTREAM USE.
+
 # OUTPUT SHOULD BE A TSV ONLY WITH USABLE EXPERIMENTS. CONTROLS AND REPLICATES ARE LABELED AS SUCH WITH A COLUMN ENTRY
-#LOOKING FOR TF BINDING
+# For tf binding:
     #<Characteristics tag="chip antibody">
 
-filter_file = sys.argv[1]           # filtered_get.csv
+filter_file = sys.argv[1]           # metadata_geo.tsv
 geo_query_out = sys.argv[2]         # series_data.tsv
 
 tf_tags = ['chip antibody', 'antibody']
@@ -32,6 +35,7 @@ print(control_checks)
 illegal_controls = ['ING','IPG']
 miniML = '{http://www.ncbi.nlm.nih.gov/geo/info/MINiML}'
 human_checks = ['Mus musculus']
+chip_checks = ['rna-seq', 'RNA-seq']
 
 
 # ref1 = "hg38"
@@ -124,6 +128,13 @@ def check_control(root):
     return is_control_loc
 
 def sample_is_not_valid(root):
+    '''
+    Goes through a series of validation checks to test the validity of a xml root
+        currently checks if:
+            - human
+            - chipseq
+    '''
+
     # return False
     total_bool = False
 
@@ -131,6 +142,11 @@ def sample_is_not_valid(root):
     for hcheck in human_checks:
         non_human = check_word_willegal(hcheck,root,illegal_controls,75)
     if non_human:
+        total_bool = True
+
+    for ccheck in chip_checks:
+        non_chip = check_word_willegal(ccheck,root,illegal_controls,75)
+    if non_chip:
         total_bool = True
 
     return total_bool
@@ -180,20 +196,20 @@ for index, row in full_table.iterrows():                                        
 
 
             all_samples = current_root.findall(miniML+'Sample')
-            if len(all_samples) > 50:
+            if len(all_samples) > 20:
                 overcount += 1
                 continue
             for sample in all_samples:                                       # Loops through all 'Sample' nodes
                 # print(sample)
                 print(valid)
-                if sample_is_not_valid(sample):                              # if a sample is not valid, neither is the series
+                if sample_is_not_valid(sample):                              # If a sample is not valid, neither is the series
                     valid = False
                     continue
                 is_control = 'False'
                 if check_control(sample):
                     is_control = 'True'
                 # print(is_control)
-                if is_control == 'False' and tf == None:         #If sample is not a control and tf isn't yet identified, find tf in replicate
+                if is_control == 'False' and tf == None:         # If sample is not a control and tf isn't yet identified, find tf in replicate
                     # print('checking tf')
                     out_find = find_tf(sample)
                     if out_find != None:

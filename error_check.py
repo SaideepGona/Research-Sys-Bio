@@ -6,8 +6,13 @@ import sys
 import time
 
 size_cut_off = 1000000000                    # File size which should not be exceeded
+check_path = sys.argv[1]
 
-def size_check():
+
+def size_check(check_path):
+
+    if check_path != None:
+        all_files = os.listdir(check_path)
     all_files = os.listdir()
     std_files = []
     folder_size = 0
@@ -29,5 +34,5 @@ def cancel_jobs():       # Cancels all jobs
     subprocess.run(["scancel", "-u", "sgona"])
 
 while True:                           # While loop with sleep interval between SizeCheck executions
-    total_sum = size_check()
+    total_sum = size_check(check_path)
     time.sleep(30)

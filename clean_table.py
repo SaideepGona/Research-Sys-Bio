@@ -1,6 +1,8 @@
 import os
 import sys
 
+# Utility script for cleaning the tf table
+
 table = sys.argv[1]
 out = sys.argv[2]
 

@@ -1,10 +1,22 @@
+'''
+Author: Saideep Gona
+
+Given a GFF file, constructs a list of all unique gene names from that file
+'''
+
 import os
 import sys
 
-# Given a GFF file, constructs a list of all unique gene names from that file
+# IO ************************************************************
 
-input_gff = sys.argv[1]
-output_list = sys.argv[2]
+if len(sys.argv) > 1:
+    input_gff = sys.argv[1]
+    output_list = sys.argv[2]
+else:
+    input_gff = None
+    output_list = None
+
+# IO END *********************************************************
 
 with open(input_gff, "r") as gff:
     all_genes = []

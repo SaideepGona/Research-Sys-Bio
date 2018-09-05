@@ -1,4 +1,4 @@
-# This script is for emptying the scratch drives programmatically
+# This script is for emptying the cluster scratch drives programmatically
 
 import os
 import glob

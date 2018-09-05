@@ -1,3 +1,9 @@
+'''
+Author: Saideep Gona
+
+Builds tf tables based on available ChIP-Seq Studies
+'''
+
 import pandas as pd
 import glob
 import copy
@@ -10,13 +16,23 @@ import requests
 distance_threshold_upstream = -10000                         # Permissable default peak distances from transcription start site for inclusion
 distance_threshold_downstream = 1000
 
-if len(sys.argv) > 4:
-    distance_threshold_upstream = int(sys.argv[4])
-    distance_threshold_downstream = int(sys.argv[5])
+if len(sys.argv) > 1:
 
-enc_metadata = sys.argv[1]
-geo_metadata = sys.argv[2]
-all_genes_name = sys.argv[3]                                 # Path to file of all genes
+    if len(sys.argv) > 4:
+        distance_threshold_upstream = int(sys.argv[4])
+        distance_threshold_downstream = int(sys.argv[5])
+
+    enc_metadata = sys.argv[1]
+    geo_metadata = sys.argv[2]
+    all_genes_name = sys.argv[3]                                 # Path to file of all genes
+
+else:
+
+    distance_threshold_upstream = None
+    distance_threshold_downstream = None
+    enc_metadata = None
+    geo_metadata = None
+    all_genes_name = None   
 
 def add_experiment_to_table(table, experiment):
 

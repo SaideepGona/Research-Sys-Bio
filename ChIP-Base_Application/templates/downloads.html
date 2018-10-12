@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+
+{% block body %}
+
+<div id="banner">
+    <div class="container">
+        <div class="title">
+            <h2>Analysis Presets</h2>
+        </div>
+    </div>
+</div>
+<div id="featured1">
+    <div class="container">
+        <div class="title">
+            <h2>Raw Data</h2>
+                <h3>ChIP-Seq Peaks</h3>
+        </div>
+        <div class="row">
+                {% for file_ind in range(download_files.num_peak_files) %}
+                    <div class = "col-sm">
+                        <a href="{{ url_for('download_file', file_path = download_files.unpath_peak_files[loop.index]) }}">
+                            <button style="height: 3vh; width: 25vw" class='btn btn-secondary'>{{ download_files.peak_files_strip[loop.index] }}</button>
+                        </a>
+                    </div>
+                {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock body %}

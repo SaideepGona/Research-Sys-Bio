@@ -1,0 +1,81 @@
+peaks_column_list = [
+            0"chrom",
+            1"start",
+            2"end",
+            3"id",
+            4"length",
+            5"summit",
+            6"pileup",
+            7"log_p",
+            8"fold_enrichment",
+            9"log_q",
+            10"transcription_factors",
+            11"tissue_types",
+            12"experiment_accession"
+            ]
+
+annotation_columns_list = [
+    0"Peak ID,
+    1"Chrom",
+    2"Start",
+    3"End",
+    4"Strand"
+    5"Peak Score"
+    6"Focus Ratio"
+    7"Annotation"
+    8"Detailed Annotation"
+    9"Distance to TSS"
+    10"Nearest Promoter ID"
+    11"Entrez ID"
+    12"Nearest Unigene"
+    13"Nearest Refseq"
+    14"Nearest Ensemble"
+    15"Gene Name"
+    16"Gene Alias"
+    17"Gene Description"
+    18"Gene Type"
+]
+
+meta_column_list = ["experiment_accession",
+            "transcription_factors",
+            "tissue_types"
+            ]
+
+class ParameterForm(FlaskForm):
+    # log_p = StringField('-log(p) Value', validators=[DataRequired()])
+    # fold_enrichment = StringField('Fold Enrichment', validators=[DataRequired()])
+    # promoter_bool = BooleanField('Promoters')
+    # enhancer_bool = BooleanField('Enhancers')
+
+    promoter_bool = BooleanField('Promoters')
+    enhancer_bool = BooleanField('Enhancers')
+
+    transcription_factors = StringField('Transcription Factors')
+    tissue_types = StringField('Tissue Types')
+
+    log_p = FloatField('-log(p) Value', validators=[DataRequired()])
+    fold_enrichment = FloatField('Fold Enrichment', validators=[DataRequired()])
+
+    # If promotor is selected, these fields should appear
+    distance_from_TSS = IntegerField('Distance from TSS', validators=[NumberRange(0, 100000, message="Must be an integer in range [0,100000]")])
+    
+    email = StringField("Email", validators=[DataRequired()])
+
+    submit = SubmitField('Submit')
+
+***************************************
+
+    query_data_dict = {
+    "promoter": form.promoter_bool.data, 
+    "enhancer": form.enhancer_bool.data,
+
+    "transcription_factors": parse_input(form.transcription_factors.data, ",", "transcription_factors", all_possible),
+    "tissue_types": parse_input(form.tissue_types.data, ",", "tissue_types", all_possible),
+
+    "log_p": form.log_p.data, 
+    "fold_enrichment": form.fold_enrichment.data,
+
+    "dist_tss": form.distance_from_TSS.data,
+
+    "email": form.email.data
+}

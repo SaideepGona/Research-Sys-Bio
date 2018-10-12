@@ -1,0 +1,10 @@
+Packages used in this app:
+
+    Python
+        Flask
+            wtfflask
+        Email
+    
+    Homer
+
+    

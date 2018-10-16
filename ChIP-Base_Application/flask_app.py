@@ -62,7 +62,6 @@ class DownloadFiles():
         self.peak_files_strip = peak_files_strip
         self.num_peak_files = len(peak_files)
 
-
 # Forms
 
 class ParameterForm(FlaskForm):
@@ -84,7 +83,7 @@ class ParameterForm(FlaskForm):
     fold_enrichment = FloatField('Fold Enrichment', validators=[DataRequired(message="logp not right")])
 
     # distance_from_TSS = IntegerField('Distance from TSS', validators=[NumberRange(0, 100000, message="Must be an integer in range [0,100000]")])
-    distance_from_TSS_upstream = IntegerRangeField('Distance from TSS Upstream', validators=[NumberRange(0, 100000, message="Must be an integer in range [0,100000]")])
+    distance_from_TSS_upstream = IntegerField('Distance from TSS Upstream', validators=[NumberRange(0, 100000, message="Must be an integer in range [0,100000]")])
     distance_from_TSS_downstream = IntegerField('Distance from TSS Downstream', validators=[NumberRange(0, 100000, message="Must be an integer in range [0,100000]")])
     
     email = StringField("Email", validators=[DataRequired(message="email not right")])
@@ -102,6 +101,7 @@ meta_column_list = ["experiment_accession",
             "transcription_factors",
             "tissue_types"
             ]
+
 class ChIP_Meta(db.Model):
     '''
     Stores metadata on ChIP-Seq Studies
@@ -225,6 +225,7 @@ def run_pipeline(user_params):
                     Peaks.query.filter(Peaks.tissue_types.in_(user_params["tissue_types"]))
                     .filter(Peaks.transcription_factors.in_(user_params["transcription_factors"]))
                     )
+            
     study_list = [x.experiment_accession for x in peak_subset]
 
     # for x in peak_subset:
@@ -245,15 +246,69 @@ def run_pipeline(user_params):
     # End Step 2 
     # Step 3 
 
-    annotation_output = pwd + "/intermediates/" + "annotation_" + time_string + ".anno"
-    peaks_command = [
-        "annotatePeaks.pl",
-        temp_peaks_file,
-        "hg38",
-        ">",
-        annotation_output
-    ]
-    os.system(" ".join(peaks_command))
+    if user_params["promoter"] and not user_params["enhancer"]: # Promoter only
+    
+
+        annotation_output = pwd + "/intermediates/" + "annotation_" + time_string + ".anno"
+        peaks_command = [
+            "annotatePeaks.pl",
+            temp_peaks_file,
+            "hg38",
+            ">",
+            annotation_output
+        ]
+        os.system(" ".join(peaks_command))
+
+    elif user_params["enhancer"] and not user_params["promoter"]:   # Enhancer only
+
+        enhancer_bed = pwd + "/enhancer-gene/processed/unionAHSIL"
+        intersect_output = pwd + "/intermediates/" + "annotation_" + time_string + ".bed"
+        bed_command = [
+            "bedtools",
+            "intersect",
+            "-a",
+            enhancer_bed,
+            "-b",
+            temp_peaks_file,
+            "-wb",
+            ">",
+            intersect_output
+        ]
+        os.system(" ".join(bed_command))
+
+    elif user_params["promoter"] and user_params["enhancer"]:   # Promoter and Enhancer
+
+        enhancer_bed = pwd + "/enhancer-gene/processed/unionAHSIL"
+        intersect_output = pwd + "/intermediates/" + "annotation_" + time_string + ".bed"
+        bed_command = [
+            "bedtools",
+            "intersect",
+            "-a",
+            enhancer_bed,
+            "-b",
+            temp_peaks_file,
+            "-wb",
+            ">",
+            intersect_out
+        ]
+
+        annotation_output = pwd + "/intermediates/" + "annotation_" + time_string + ".anno"
+
+        peaks_command = [
+            "annotatePeaks.pl",
+            temp_peaks_file,
+            "hg38",
+            ">",
+            annotation_output
+        ]
+
+        os.system(" ".join(bed_command))
+        os.system(" ".join(peaks_command))
+
+    else:
+        print("invalid query, neither promotor nor enhancer selected")
+        return None
+
 
     print("||||||||||||||||||peaks annotated")
 
@@ -262,7 +317,19 @@ def run_pipeline(user_params):
 
     tg_table = create_empty_table(all_genes, all_tfs)
 
-    parse_promoter(user_params, annotation_output, tg_table)
+    if user_params["promoter"] and not user_params["enhancer"]: # Promoter only
+        parse_promoter(user_params, annotation_output, tg_table)
+
+    elif user_params["enhancer"] and not user_params["promoter"]:   # Enhancer only
+        parse_enhancer(user_params, intersect_output, tg_table)
+
+    elif user_params["promoter"] and user_params["enhancer"]:   # Promoter and Enhancer
+        parse_promoter(user_params, annotation_output, tg_table)
+        parse_enhancer(user_params, intersect_output, tg_table)
+
+    else:
+        print("invalid query, neither promotor nor enhancer selected")
+        return None
 
     tg_write_file = pwd + "/intermediates/" + "tgtable_" + time_string + ".tgtable"
     write_dict_tsv(tg_table, all_genes, all_tfs, tg_write_file)
@@ -283,6 +350,9 @@ def run_pipeline(user_params):
     print(user_params["email"])
 
     # End Step 5
+    # Clear up intermediate files
+    
+
     print("END PIPELINE *************************************************************************************************************")
 
 def write_dict_tsv(tg_table, all_genes, all_tfs, table_write):
@@ -345,13 +415,45 @@ def constraints_met(data, user_params, constraints_type):
         else:
             return False
 
-def parse_promoter(user_params, anno_file, tf_gene_table):
+def parse_enhancer(user_params, anno_file, tf_gene_table):
     '''
-    Updates tf-gene table with annotation results which pass constraints
+    Updates tf-gene table with enhancer annotation results which pass constraints
     '''
     line_count = 0
     with open(anno_file, "r") as anno:
-        print(tf_gene_table["PAX7"].keys())
+        # print(tf_gene_table["PAX7"].keys())
+        for line in anno:
+            print(line)
+            p_l= line.rstrip("\n").split("\t")
+            # print(p_l, "annotation line")
+            # print(line_count)
+            if line_count == 0:
+                line_count += 1
+                continue
+
+
+            peak_id = int(p_l[10])
+            gene_id = p_l[6]
+            ori_peak_tf = Peaks.query.filter(Peaks.id==peak_id)[0].transcription_factors
+            print(ori_peak_tf, "ori peak")
+            if gene_id in tf_gene_table:
+
+                # print("CHECK gene")
+                if ori_peak_tf in tf_gene_table[gene_id]:
+                    # print("CHECK 2, added")
+                    tf_gene_table[gene_id][ori_peak_tf] += 1
+            else:
+                print("Did not pass Check 1 ", gene_id)
+            line_count += 1
+
+
+def parse_promoter(user_params, anno_file, tf_gene_table):
+    '''
+    Updates tf-gene table with promoter annotation results which pass constraints
+    '''
+    line_count = 0
+    with open(anno_file, "r") as anno:
+        # print(tf_gene_table["PAX7"].keys())
         for line in anno:
             p_l= line.rstrip("\n").split("\t")
             # print(p_l, "annotation line")
@@ -421,7 +523,7 @@ def convert_query_to_file(columns, query_result, user_params, file_path):
     
 def parse_input(in_string, delim, field, all_possible):
 
-    if in_string.strip() == "":
+    if in_string.strip() == "ALL":
         return all_possible[field]
 
     return(in_string.strip().split(delim))
@@ -473,16 +575,16 @@ def promoter_form():
             "time": "_".join(str(datetime.utcnow()).split(" "))
         }
         # print(query_data_dict)
-        # pid=os.fork()
-        # if pid==0:
-        #     run_pipeline(query_data_dict)
+        pid=os.fork()
+        if pid==0:
+            run_pipeline(query_data_dict)
 
         return render_template('complete.html')
     return render_template('promoter_form.html', form = form)
 
 @app.route('/enhancer_form', methods=['GET', 'POST'])
 def enhancer_form():
-    form = ParameterForm()
+    form = ParameterForm(transcription_factors = "ALL", tissue_types = "ALL", distance_from_TSS_upstream = 1, distance_from_TSS_downstream = 1) 
     if form.validate_on_submit():
         query_data = build_query_hist(form)
         db.session.add(query_data)
@@ -497,8 +599,8 @@ def enhancer_form():
             "log_p": form.log_p.data, 
             "fold_enrichment": form.fold_enrichment.data,
 
-            "dist_tss": form.distance_from_TSS_upstream.data,
-            "dist_tss": form.distance_from_TSS_upstream.data,
+            "dist_tss": 1,
+            "dist_tss": 1,
 
             "email": form.email.data,
 
@@ -514,7 +616,7 @@ def enhancer_form():
 
 @app.route('/promoter_enhancer_form', methods=['GET', 'POST'])
 def promoter_enhancer_form():
-    form = ParameterForm()
+    form = ParameterForm(transcription_factors = "ALL", tissue_types = "ALL")
     if form.validate_on_submit():
         query_data = build_query_hist(form)
         db.session.add(query_data)

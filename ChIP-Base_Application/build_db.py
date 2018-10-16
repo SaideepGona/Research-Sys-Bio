@@ -16,7 +16,7 @@ if len(sys.argv) > 1:
     peak_dir = sys.argv[1]
     metadata_dir = sys.argv[2]
 else:
-    peak_dir = "/home/saideep/Documents/GitHub_Repos/Saideep/MSCB_Sem1/Research/Research-Sys-Bio/ChIP-Base_Application/temp_peaks/"
+    peak_dir = "/home/saideep/Documents/GitHub_Repos/Saideep/MSCB_Sem1/Research/Research-Sys-Bio/ChIP-Base_Application/peaks/"
     metadata_path = "/home/saideep/Documents/GitHub_Repos/Saideep/MSCB_Sem1/Research/Research-Sys-Bio/ChIP-Base_Application/tissue_types.pkl"
 
 # IO END *********************************************************

@@ -2,7 +2,7 @@
 
 {% block body %}
 <div id="banner">
-    <div class="container">
+    <div class="container form-container">
         <div class="title">
                 <h2>Step 2:</h2>
                 <span class="byline"> Input Constraints </span>
@@ -11,7 +11,7 @@
                 <br>
             <form action="" method="POST" class="association_form">
                     {{ form.hidden_tag() }} 
-                <h1>Study-Specific Parameters</h1><br>
+                <h1 class = "hover-text-header" data-toggle="tooltip" data-placement="right" title="-log(p) range: (1,11)">Study-Specific Parameters</h1><br>
                     <p>
                         {{ form.transcription_factors.label }}<br>
                         {{ form.transcription_factors(size=32) }}
@@ -20,8 +20,8 @@
                         {{ form.tissue_types.label }}<br>
                         {{ form.tissue_types(size=32) }}
                     </p>
-
-                <h1>Peak-Specific Parameters</h1><br>
+                    <br>
+                <h1 class = "hover-text-header" data-toggle="tooltip" data-placement="right" title="-log(p) range: (1,11)">Peak-Specific Parameters</h1><br>
                     <p>
                         {{ form.log_p.label }}<br>
                         {{ form.log_p(size=32) }}
@@ -30,8 +30,8 @@
                         {{ form.fold_enrichment.label }}<br>
                         {{ form.fold_enrichment(size=32) }}
                     </p>
-
-                <h1 >Provide Email</h1><br>
+                    <br>
+                <h1 class = "hover-text-header" data-toggle="tooltip" data-placement="right" title="-log(p) range: (1,11)">Provide Email</h1><br>
                     <p>{{ form.email.label }}<br>
                         {{form.email(size=32)}} 
                     </p>    

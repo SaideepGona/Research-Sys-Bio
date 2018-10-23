@@ -12,19 +12,18 @@
 <div id="featured1">
     <div class="container">
         <div class="title">
-            <h2>OUR MOTIVATION</h2>
-            <span class="byline"></span> </div>
-        <p> Chromatin immunoprecipitation followed by sequencing (ChIP-Seq) continues to be a critical informer of protein-DNA binding. 
-            ChIP-IO serves as a repository for the thousands of salvageable transcription factor ChIP-Seq datasets in existance, as well as a platform for 
-            delivering rapid custom analysis on this data. </p>
-    </div>
-</div>
-<div id="featured2">
-    <div class="container">
-        <div class="title">
             <h2>GETTING STARTED</h2>
             <span class="byline"></span> </div>
-        <p> Looking for  </p>
+        <p> To perform a custom set of analyses and have the bundled output data emailed to you, 
+                navigate to the <a style="color: #8fd8f5" href="{{ url_for('construct_query') }}">"CONSTRUCT QUERY"</a> tab above.
+        </p>
+        <p> If you would prefer to directly download selected analysis presets, or are simply interested 
+            in downloading plain ChIP-Seq peak datasets, 
+            instead navigate to the <a style="color: #8fd8f5" href="{{ url_for('downloads') }}">"DOWNLOADS"</a> tab above.
+        </p>
+        <p> For more information on the technical aspects of the site, 
+                navigate to the <a style="color: #8fd8f5" href="{{ url_for('about') }}">"ABOUT"</a> tab above.
+        </p>
     </div>
 </div>
 {% endblock body %}

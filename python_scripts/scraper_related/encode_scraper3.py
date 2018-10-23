@@ -26,6 +26,7 @@ distance_threshold_upstream = -1000                         #Permissable peak di
 distance_threshold_downstream = 100
 time = str(time.time())
 scratch_path_part = "/scratch/sgona/"
+home_dir = "/home/sgona/"
 scratch_path = scratch_path_part + time +"/"
 subprocess.run(["mkdir", "-p", scratch_path_part])
 subprocess.run(["mkdir", "-p", scratch_path+"/tmp/"])

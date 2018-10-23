@@ -21,11 +21,14 @@ from flask import Flask
 from flask import render_template, send_file, redirect, url_for
 from flask_wtf import FlaskForm
 from flask_sqlalchemy import SQLAlchemy
-from wtforms import StringField, PasswordField, BooleanField, SubmitField, FloatField, IntegerField
+from wtforms import StringField, PasswordField, BooleanField, SubmitField, FloatField, IntegerField, SelectField, SelectMultipleField
 from wtforms.validators import DataRequired, NumberRange, Length
 from wtforms.fields.html5 import IntegerRangeField 
 from wtforms_html5 import AutoAttrMeta
 
+#TODO Searchable download table
+#TODO Slider bar for forms
+#TODO Write up general text, Home, About, and Contact
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'sai-key'
@@ -48,47 +51,6 @@ with open(all_tfs_path, "r") as at:
         all_tfs.append(line.rstrip("\n"))
 print("NUMBER OF TFS: ", len(all_tfs))
 
-class DownloadFiles():
-
-    def __init__(self):
-        self.make_time = datetime.utcnow
-
-    def collect_peaks(self, peak_dir):
-        peak_files = glob.glob(pwd + "/" + peak_dir + "/*")
-        unpath_peak_files = ["#".join(x.split("/")) for x in peak_files]
-        peak_files_strip = [x.split("/")[-1] for x in peak_files]
-        self.peak_files = peak_files
-        self.unpath_peak_files = unpath_peak_files
-        self.peak_files_strip = peak_files_strip
-        self.num_peak_files = len(peak_files)
-
-# Forms
-
-class ParameterForm(FlaskForm):
-    # log_p = StringField('-log(p) Value', validators=[DataRequired()])
-    # fold_enrichment = StringField('Fold Enrichment', validators=[DataRequired()])
-    # promoter_bool = BooleanField('Promoters')
-    # enhancer_bool = BooleanField('Enhancers')
-
-    class Meta(AutoAttrMeta):
-        pass
-
-    promoter_bool = BooleanField('Promoters')
-    enhancer_bool = BooleanField('Enhancers')
-
-    transcription_factors = StringField('Transcription Factors')
-    tissue_types = StringField('Tissue Types')
-
-    log_p = FloatField('-log(p) Value', validators=[DataRequired(message="logp not right")])
-    fold_enrichment = FloatField('Fold Enrichment', validators=[DataRequired(message="logp not right")])
-
-    # distance_from_TSS = IntegerField('Distance from TSS', validators=[NumberRange(0, 100000, message="Must be an integer in range [0,100000]")])
-    distance_from_TSS_upstream = IntegerField('Distance from TSS Upstream', validators=[NumberRange(0, 100000, message="Must be an integer in range [0,100000]")])
-    distance_from_TSS_downstream = IntegerField('Distance from TSS Downstream', validators=[NumberRange(0, 100000, message="Must be an integer in range [0,100000]")])
-    
-    email = StringField("Email", validators=[DataRequired(message="email not right")])
-
-    submit = SubmitField('Submit')
 
     # New params
 
@@ -205,6 +167,52 @@ class Presets(db.Model):
     enrichment = db.Column(db.Boolean)
     table_file_path = db.Column(db.String) 
 
+class DownloadFiles():
+
+    def __init__(self):
+        self.make_time = datetime.utcnow
+
+    def collect_peaks(self, peak_dir):
+        peak_files = glob.glob(pwd + "/" + peak_dir + "/*")
+        unpath_peak_files = ["#".join(x.split("/")) for x in peak_files]
+        peak_files_strip = [x.split("/")[-1] for x in peak_files]
+        self.peak_files = peak_files
+        self.unpath_peak_files = unpath_peak_files
+        self.peak_files_strip = peak_files_strip
+        self.num_peak_files = len(peak_files)
+
+all_possible = {
+"transcription_factors": list(set([x.transcription_factors for x in ChIP_Meta.query.all()])),
+"tissue_types": list(set([x.tissue_types for x in ChIP_Meta.query.all()]))
+}
+
+# Forms
+
+class ParameterForm(FlaskForm):
+    # log_p = StringField('-log(p) Value', validators=[DataRequired()])
+    # fold_enrichment = StringField('Fold Enrichment', validators=[DataRequired()])
+    # promoter_bool = BooleanField('Promoters')
+    # enhancer_bool = BooleanField('Enhancers')
+
+    promoter_bool = BooleanField('Promoters')
+    enhancer_bool = BooleanField('Enhancers')
+
+    tfs = [(x,x) for x in all_possible["transcription_factors"]]
+    tissues = [(x,x) for x in all_possible["tissue_types"]]
+
+    transcription_factors = StringField('Transcription Factors')
+    tissue_types = StringField('Tissue Types')
+
+    log_p = FloatField('-log(p) Value', validators=[DataRequired(message="logp not right")])
+    fold_enrichment = FloatField('Fold Enrichment', validators=[DataRequired(message="logp not right")])
+
+    # distance_from_TSS = IntegerField('Distance from TSS', validators=[NumberRange(0, 100000, message="Must be an integer in range [0,100000]")])
+    distance_from_TSS_upstream = IntegerField('Distance from TSS Upstream', validators=[NumberRange(0, 100000, message="Must be an integer in range [0,100000]")])
+    distance_from_TSS_downstream = IntegerField('Distance from TSS Downstream', validators=[NumberRange(0, 100000, message="Must be an integer in range [0,100000]")])
+    
+    email = StringField("Email", validators=[DataRequired(message="email not right")])
+
+    submit = SubmitField('Submit')
 
 # General Functions
 
@@ -218,6 +226,9 @@ def run_pipeline(user_params):
     # Step 1
 
     print("BEGIN PIPELINE *************************************************************************************************************")
+    print(user_params)
+
+    removable_junk = []
 
     time_string = user_params["time"]
 
@@ -237,7 +248,8 @@ def run_pipeline(user_params):
     # Step 2
 
     temp_peaks_file = pwd + "/intermediates/" + "temppeaks_" + time_string + ".bed"
-    peaks_list = convert_query_to_file(peaks_column_list, peak_subset, user_params,  temp_peaks_file)
+    removable_junk.append(temp_peaks_file)
+    convert_query_to_file(peaks_column_list, peak_subset, user_params,  temp_peaks_file)
 
     # os.system("sort -k 1,1 -k2,2n " + temp_peaks_file)
 
@@ -250,6 +262,7 @@ def run_pipeline(user_params):
     
 
         annotation_output = pwd + "/intermediates/" + "annotation_" + time_string + ".anno"
+        removable_junk.append(annotation_output)
         peaks_command = [
             "annotatePeaks.pl",
             temp_peaks_file,
@@ -261,38 +274,20 @@ def run_pipeline(user_params):
 
     elif user_params["enhancer"] and not user_params["promoter"]:   # Enhancer only
 
-        enhancer_bed = pwd + "/enhancer-gene/processed/unionAHSIL"
+        enhancer_bed_dir = pwd + "/enhancer-gene/processed/tissue_beds/"
         intersect_output = pwd + "/intermediates/" + "annotation_" + time_string + ".bed"
-        bed_command = [
-            "bedtools",
-            "intersect",
-            "-a",
-            enhancer_bed,
-            "-b",
-            temp_peaks_file,
-            "-wb",
-            ">",
-            intersect_output
-        ]
-        os.system(" ".join(bed_command))
+        removable_junk.append(intersect_output)
+        process_enhancers(user_params, intersect_output, enhancer_bed_dir)
 
     elif user_params["promoter"] and user_params["enhancer"]:   # Promoter and Enhancer
 
-        enhancer_bed = pwd + "/enhancer-gene/processed/unionAHSIL"
+        enhancer_bed_dir = pwd + "/enhancer-gene/processed/tissue_beds/"
         intersect_output = pwd + "/intermediates/" + "annotation_" + time_string + ".bed"
-        bed_command = [
-            "bedtools",
-            "intersect",
-            "-a",
-            enhancer_bed,
-            "-b",
-            temp_peaks_file,
-            "-wb",
-            ">",
-            intersect_out
-        ]
+        removable_junk.append(intersect_output)
+        process_enhancers(user_params, intersect_output, enhancer_bed_dir)
 
         annotation_output = pwd + "/intermediates/" + "annotation_" + time_string + ".anno"
+        removable_junk.append(annotation_output)
 
         peaks_command = [
             "annotatePeaks.pl",
@@ -302,7 +297,6 @@ def run_pipeline(user_params):
             annotation_output
         ]
 
-        os.system(" ".join(bed_command))
         os.system(" ".join(peaks_command))
 
     else:
@@ -315,23 +309,33 @@ def run_pipeline(user_params):
     # End Step 3
     # Step 4
 
+    final_peak_file = time_string + "_finalpeaks.bed"           # Place all the peaks which successfully match regulatory regions here.
+    removable_junk.append(final_peak_file)
+    with open(final_peak_file, "w") as final:
+        print(final_peak_file, "contains all final peaks")
+
     tg_table = create_empty_table(all_genes, all_tfs)
 
     if user_params["promoter"] and not user_params["enhancer"]: # Promoter only
-        parse_promoter(user_params, annotation_output, tg_table)
+        parse_promoter(user_params, annotation_output, tg_table, final_peak_file)
 
     elif user_params["enhancer"] and not user_params["promoter"]:   # Enhancer only
-        parse_enhancer(user_params, intersect_output, tg_table)
+        parse_enhancer(user_params, intersect_output, tg_table, final_peak_file)
 
     elif user_params["promoter"] and user_params["enhancer"]:   # Promoter and Enhancer
-        parse_promoter(user_params, annotation_output, tg_table)
-        parse_enhancer(user_params, intersect_output, tg_table)
+        parse_promoter(user_params, annotation_output, tg_table, final_peak_file)
+        parse_enhancer(user_params, intersect_output, tg_table, final_peak_file)
 
     else:
         print("invalid query, neither promotor nor enhancer selected")
         return None
 
+    motifs_file = time_string + "_motifs.txt"
+    removable_junk.append(motifs_file)
+    motif_discovery()
+
     tg_write_file = pwd + "/intermediates/" + "tgtable_" + time_string + ".tgtable"
+    removable_junk.append(tg_write_file)
     write_dict_tsv(tg_table, all_genes, all_tfs, tg_write_file)
     os.system("gzip " + tg_write_file)
     zipped_tg_table = tg_write_file + ".gz"
@@ -351,9 +355,92 @@ def run_pipeline(user_params):
 
     # End Step 5
     # Clear up intermediate files
-    
+
+    for f in removable_junk:
+        try:
+            os.remove(f)
+        except:
+            continue
 
     print("END PIPELINE *************************************************************************************************************")
+
+def motif_discovery(bed_file, time_string, output_file):
+    '''
+    Converts a bed file into a fasta, and then performs motif discovery on it using MEME.
+    '''
+    reference = pwd + "/GRCh38/GRCh38.p12.genome.fa"
+
+    intermediate_file = time_string + "_motifinter.fa"
+
+    convert_bed_fasta = [
+        "bedtools",
+        "getfasta",
+        "-fi",
+        reference,
+        "-bed",
+        bed_file,
+        ">",
+        intermediate_file
+        ]
+    
+    find_motifs = [
+        "meme",
+        intermediate_file,
+        "-o",
+        output_file
+    ]
+
+    os.system(" ".join(convert_bed_fasta))
+
+    os.system(" ".join(find_motifs))
+
+    os.remove(intermediate_file)
+
+def process_enhancers(user_params, intersect_out, bed_dir):
+    '''
+    Processes enhancers on a tissue-by-tissue basis. Takes in an already filtered set of
+    peaks and partitions them by tissue-type. Annotation is then performed individually
+    and the combined results concatenated into a single file
+    '''
+
+    file_prefix = intersect_out.rstrip(".bed")
+    tissue_peak_beds = []
+    tissue_intersect_beds = []
+    for tissue in user_params["tissue_types"]:
+
+        temp_peaks_file = file_prefix+"_temppeaks_"+tissue+".bed"
+        tissue_peak_beds.append(temp_peaks_file)
+        tissue_intersect = file_prefix+"_tempintersect_"+tissue+".bed"
+        tissue_intersect_beds.append(tissue_intersect)
+
+        peak_subset = (
+                        Peaks.query.filter(Peaks.tissue_types.in_([tissue]))
+                        .filter(Peaks.transcription_factors.in_(user_params["transcription_factors"]))
+                        )
+
+
+        convert_query_to_file(peaks_column_list, peak_subset, user_params, temp_peaks_file)
+
+        enhancer_bed = bed_dir + "/" + tissue + ".bed"
+        bed_command = [
+        "bedtools",
+        "intersect",
+        "-a",
+        enhancer_bed,
+        "-b",
+        temp_peaks_file,
+        "-wb",
+        ">",
+        tissue_intersect
+        ]
+        os.system(" ".join(bed_command))
+    
+    intersect_files = " ".join(tissue_intersect_beds)
+    os.system("cat "+ intersect_files+ " > "+intersect_out)
+    
+    # for f in (tissue_intersect_beds + tissue_peak_beds):
+    #     os.remove(f)
+
 
 def write_dict_tsv(tg_table, all_genes, all_tfs, table_write):
     '''
@@ -415,66 +502,82 @@ def constraints_met(data, user_params, constraints_type):
         else:
             return False
 
-def parse_enhancer(user_params, anno_file, tf_gene_table):
+def parse_enhancer(user_params, anno_file, tf_gene_table, full_peak_bed):
     '''
     Updates tf-gene table with enhancer annotation results which pass constraints
     '''
+
+    # Example line from anno_file: chrX	12974102	12974429	88841	chrX	12809489	PRPS2	chrX	12974102	12974429	70528	328	12974406	22.35	6.99766	3.33623	3.13225	eGFP-PYGO2	blood	ENCSR410DWC
+
+    print("parsing enhancer")
     line_count = 0
-    with open(anno_file, "r") as anno:
-        # print(tf_gene_table["PAX7"].keys())
-        for line in anno:
-            print(line)
-            p_l= line.rstrip("\n").split("\t")
-            # print(p_l, "annotation line")
-            # print(line_count)
-            if line_count == 0:
+    with open(full_peak_bed, "a") as full:
+        with open(anno_file, "r") as anno:
+            # print(tf_gene_table["PAX7"].keys())
+            for line in anno:
+                # print(line)
+                p_l= line.rstrip("\n").split("\t")
+                # print(p_l, "annotation line")
+                # print(line_count)
+                if line_count == 0:
+                    line_count += 1
+                    continue
+
+                peak_bedline_l = p_l[7:9]
+                peak_bedline = "\t".join(peak_bedline_l) + "\n"
+                full.write(peak_bedline)
+
+                peak_id = int(p_l[10])
+                gene_id = p_l[6]
+                ori_peak_tf = Peaks.query.filter(Peaks.id==peak_id)[0].transcription_factors
+                print(ori_peak_tf, "ori peak")
+                if gene_id in tf_gene_table:
+
+                    # print("CHECK gene")
+                    if ori_peak_tf in tf_gene_table[gene_id]:
+                        # print("CHECK 2, added")
+                        tf_gene_table[gene_id][ori_peak_tf] += 1
+                else:
+                    print("Did not pass Check 1 ", gene_id)
                 line_count += 1
-                continue
 
 
-            peak_id = int(p_l[10])
-            gene_id = p_l[6]
-            ori_peak_tf = Peaks.query.filter(Peaks.id==peak_id)[0].transcription_factors
-            print(ori_peak_tf, "ori peak")
-            if gene_id in tf_gene_table:
-
-                # print("CHECK gene")
-                if ori_peak_tf in tf_gene_table[gene_id]:
-                    # print("CHECK 2, added")
-                    tf_gene_table[gene_id][ori_peak_tf] += 1
-            else:
-                print("Did not pass Check 1 ", gene_id)
-            line_count += 1
-
-
-def parse_promoter(user_params, anno_file, tf_gene_table):
+def parse_promoter(user_params, anno_file, tf_gene_table, full_peak_bed):
     '''
     Updates tf-gene table with promoter annotation results which pass constraints
     '''
     line_count = 0
-    with open(anno_file, "r") as anno:
-        # print(tf_gene_table["PAX7"].keys())
-        for line in anno:
-            p_l= line.rstrip("\n").split("\t")
-            # print(p_l, "annotation line")
-            # print(line_count)
-            if line_count == 0:
+    with open(full_peak_bed, "a") as full:
+        with open(anno_file, "r") as anno:
+            # print(tf_gene_table["PAX7"].keys())
+            for line in anno:
+                p_l= line.rstrip("\n").split("\t")
+                # print(p_l, "annotation line")
+                # print(line_count)
+                if line_count == 0:
+                    line_count += 1
+                    continue
+
+                if constraints_met(p_l, user_params, "annotations"):
+                    peak_id = int(p_l[0])
+                    ori_peak_tf = Peaks.query.filter(Peaks.id==peak_id)[0].transcription_factors
+
+                    ori_chrom = Peaks.query.filter(Peaks.id==peak_id)[0].chrom                  # Writes successfully mapped peak to file
+                    ori_start = Peaks.query.filter(Peaks.id==peak_id)[0].start
+                    ori_end = Peaks.query.filter(Peaks.id==peak_id)[0].end
+                    full_line = " ".join([ori_chrom, ori_start, ori_end]) + "\n"
+                    full.write(full_line)
+
+                    print(ori_peak_tf, "ori peak")
+                    if p_l[15] in tf_gene_table:
+
+                        print("CHECK 1")
+                        if ori_peak_tf in tf_gene_table[p_l[15]]:
+                            print("CHECK 2, added")
+                            tf_gene_table[p_l[15]][ori_peak_tf] += 1
+                    else:
+                        print("Did not pass Check 1 ", p_l[15])
                 line_count += 1
-                continue
-
-            if constraints_met(p_l, user_params, "annotations"):
-                peak_id = int(p_l[0])
-                ori_peak_tf = Peaks.query.filter(Peaks.id==peak_id)[0].transcription_factors
-                print(ori_peak_tf, "ori peak")
-                if p_l[15] in tf_gene_table:
-
-                    print("CHECK 1")
-                    if ori_peak_tf in tf_gene_table[p_l[15]]:
-                        print("CHECK 2, added")
-                        tf_gene_table[p_l[15]][ori_peak_tf] += 1
-                else:
-                    print("Did not pass Check 1 ", p_l[15])
-            line_count += 1
 
 def send_mail(send_from, send_to, subject, text, file_path, file_name, server, email_user, email_password):
 
@@ -519,9 +622,12 @@ def convert_query_to_file(columns, query_result, user_params, file_path):
                 # print(writeable, "WRITE LINE")
                 f.write(writeable)
 
-    return peaks_list
+    # return peaks_list
     
 def parse_input(in_string, delim, field, all_possible):
+    '''
+    Takes in a string and delimeter of choice and parses into a list. Handles "ALL" condition.
+    '''
 
     if in_string.strip() == "ALL":
         return all_possible[field]
@@ -678,12 +784,6 @@ def download_file(file_path):
 @app.route('/contact')
 def contact():
     return render_template('contact.html')
-
-
-all_possible = {
-"transcription_factors": list(set([x.transcription_factors for x in ChIP_Meta.query.all()])),
-"tissue_types": list(set([x.tissue_types for x in ChIP_Meta.query.all()]))
-}
 
 download_files = DownloadFiles()
 download_files.collect_peaks("peaks")

@@ -39,6 +39,8 @@ Thumbs.db
 
 # Manual Entries #
 ######################
-/home/saideep/Documents/GitHub_Repos/Saideep/MSCB_Sem1/Research/Research-Sys-Bio/ChIP-Base_Application/peaks/*
-/home/saideep/Documents/GitHub_Repos/Saideep/MSCB_Sem1/Research/Research-Sys-Bio/ChIP-Base_Application/HOMER/*
-/home/saideep/Documents/GitHub_Repos/Saideep/MSCB_Sem1/Research/Research-Sys-Bio/ChIP-Base_Application/saved_input/*
+/ChIP-Base_Application/peaks/*
+/ChIP-Base_Application/HOMER/*
+/ChIP-Base_Application/saved_input/*
+/ChIP-Base_Application/flask/*
+

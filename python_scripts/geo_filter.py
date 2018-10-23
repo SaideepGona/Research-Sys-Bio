@@ -7,7 +7,7 @@ from fuzzysearch import find_near_matches
 from fuzzywuzzy import process
 import sys
 
-# PARSES THE FULL GEO METADATA TABLE WITH CONTEXT FROM THE AND TRIES TO MAKE "SENSE" OF IT. OUTPUTS A RELAVENT
+# PARSES THE FULL GEO METADATA TABLE WITH CONTEXT FROM THE  AND TRIES TO MAKE "SENSE" OF IT. OUTPUTS A RELAVENT
 # METADATA TABLE FOR DOWNSTREAM USE.
 
 # OUTPUT SHOULD BE A TSV ONLY WITH USABLE EXPERIMENTS. CONTROLS AND REPLICATES ARE LABELED AS SUCH WITH A COLUMN ENTRY
@@ -98,6 +98,14 @@ def find_tf(root):
         if node.tag == (miniML+'Characteristics') and is_in(node.attrib['tag'], tf_tags):
             tf = node.text
     return tf
+
+def find_tissue(root):
+    '''
+    Checks entire document for nodes which indicate which TF is being studied
+    '''
+    tissue = None
+    for node in root.iter():
+        if node.tag == 
 
 
 def check_word_willegal(word,root,illegal,thresh):
